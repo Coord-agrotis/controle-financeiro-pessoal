@@ -135,6 +135,8 @@
   </div>
 </header>
 
+<div id="loadErrorBanner" style="display:none; background:#fef2f2; border:1px solid var(--danger); color:var(--danger); border-radius:8px; padding:10px 14px; margin-bottom:16px; font-size:13px;"></div>
+
 <div class="tabs">
   <button class="tab-btn active" data-view="dashboard">📊 Dashboard</button>
   <button class="tab-btn" data-view="fixas">📌 Despesas Fixas</button>
@@ -314,6 +316,13 @@
     return arr;
   }
 
+  function withTimeout(builder, ms = 10000) {
+    return Promise.race([
+      builder,
+      new Promise((resolve) => setTimeout(() => resolve({ data: null, error: { message: 'Tempo esgotado ao falar com o servidor. Recarregue a página (F5) e tente de novo.' } }), ms))
+    ]);
+  }
+
   function prazoInfo(r, mesStr) {
     if (!r.parcelas_total || !r.parcelas_mes_inicio) return { ativa: true, label: 'Sem prazo', parcelaNum: null };
     const [iy, im] = r.parcelas_mes_inicio.slice(0, 7).split('-').map(Number);
@@ -353,12 +362,21 @@
   // ---------------- DATA LOADING ----------------
   async function loadData() {
     const [fxRes, ddRes, catRes, pagRes, catalogoRes] = await Promise.all([
-      sb.from('pf_despesas_fixas').select('*').order('dia_vencimento', { ascending: true }),
-      sb.from('pf_despesas_diarias').select('*').order('data', { ascending: false }),
-      sb.from('pf_categorias').select('*').order('nome', { ascending: true }),
-      sb.from('pf_fixas_pagamentos').select('*'),
-      sb.from('pf_despesas_catalogo').select('*').order('nome', { ascending: true })
+      withTimeout(sb.from('pf_despesas_fixas').select('*').order('dia_vencimento', { ascending: true })),
+      withTimeout(sb.from('pf_despesas_diarias').select('*').order('data', { ascending: false })),
+      withTimeout(sb.from('pf_categorias').select('*').order('nome', { ascending: true })),
+      withTimeout(sb.from('pf_fixas_pagamentos').select('*')),
+      withTimeout(sb.from('pf_despesas_catalogo').select('*').order('nome', { ascending: true }))
     ]);
+    const loadErrors = [fxRes, ddRes, catRes, pagRes, catalogoRes].map(r => r.error).filter(Boolean);
+    const banner = document.getElementById('loadErrorBanner');
+    if (loadErrors.length) {
+      banner.textContent = '⚠ Não foi possível carregar todos os dados (' + loadErrors[0].message + '). Recarregue a página (F5) e tente novamente.';
+      banner.style.display = 'block';
+      loadErrors.forEach(err => console.error('Erro ao carregar dados:', err.message));
+    } else {
+      banner.style.display = 'none';
+    }
     despesasFixas = fxRes.data || [];
     despesasDiarias = ddRes.data || [];
     categorias = catRes.data || [];
@@ -465,7 +483,10 @@
   document.getElementById('btnAddCategoria').addEventListener('click', async () => {
     const nome = document.getElementById('catNovaNome').value.trim();
     if (!nome) return;
-    const { data, error } = await sb.from('pf_categorias').insert([{ nome }]).select();
+    const btn = document.getElementById('btnAddCategoria');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    const { data, error } = await withTimeout(sb.from('pf_categorias').insert([{ nome }]).select());
+    btn.disabled = false; btn.textContent = '+ Categoria';
     if (error) { alert(error.message); return; }
     categorias = categorias.filter(c => c.id !== data[0].id); categorias.push(data[0]);
     document.getElementById('catNovaNome').value = '';
@@ -476,8 +497,9 @@
     if (!e.target.classList.contains('btn-del-cat')) return;
     const id = e.target.closest('.chip').dataset.id;
     if (!confirm('Excluir esta categoria?')) return;
-    const { error } = await sb.from('pf_categorias').delete().eq('id', id);
-    if (!error) { categorias = categorias.filter(c => String(c.id) !== id); renderAll(); }
+    const { error } = await withTimeout(sb.from('pf_categorias').delete().eq('id', id));
+    if (error) { alert(error.message); return; }
+    categorias = categorias.filter(c => String(c.id) !== id); renderAll();
   });
 
   // ---------------- CADASTRO DE DESPESAS (nome + categoria) ----------------
@@ -504,7 +526,10 @@
     const nome = document.getElementById('catDespNome').value.trim();
     const categoria = document.getElementById('catDespCategoria').value || null;
     if (!nome) return;
-    const { data, error } = await sb.from('pf_despesas_catalogo').insert([{ nome, categoria }]).select();
+    const btn = document.getElementById('btnAddDespCatalogo');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    const { data, error } = await withTimeout(sb.from('pf_despesas_catalogo').insert([{ nome, categoria }]).select());
+    btn.disabled = false; btn.textContent = '+ Adicionar';
     if (error) { alert(error.message); return; }
     despesasCatalogo = despesasCatalogo.filter(c => c.id !== data[0].id); despesasCatalogo.push(data[0]);
     document.getElementById('catDespNome').value = '';
@@ -515,8 +540,9 @@
     if (!e.target.classList.contains('btn-del-desp-catalogo')) return;
     const id = e.target.closest('tr').dataset.id;
     if (!confirm('Excluir esta despesa do cadastro?')) return;
-    const { error } = await sb.from('pf_despesas_catalogo').delete().eq('id', id);
-    if (!error) { despesasCatalogo = despesasCatalogo.filter(c => String(c.id) !== id); renderAll(); }
+    const { error } = await withTimeout(sb.from('pf_despesas_catalogo').delete().eq('id', id));
+    if (error) { alert(error.message); return; }
+    despesasCatalogo = despesasCatalogo.filter(c => String(c.id) !== id); renderAll();
   });
 
   // ---------------- DESPESAS FIXAS ----------------
@@ -567,7 +593,10 @@
       parcelas_total: parcelasTotal,
       parcelas_mes_inicio: parcelasTotal ? `${currentMonthStr()}-01` : null
     };
-    const { data, error } = await sb.from('pf_despesas_fixas').insert([row]).select();
+    const btnFx = document.getElementById('btnAddFixa');
+    btnFx.disabled = true; btnFx.textContent = 'Salvando...';
+    const { data, error } = await withTimeout(sb.from('pf_despesas_fixas').insert([row]).select());
+    btnFx.disabled = false; btnFx.textContent = '+ Adicionar';
     if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
     despesasFixas = despesasFixas.filter(r => r.id !== data[0].id); despesasFixas.push(data[0]);
     ['fxDescricao','fxValor','fxDia','fxObs','fxParcelasRestantes'].forEach(id => document.getElementById(id).value = '');
@@ -580,8 +609,9 @@
     if (!e.target.classList.contains('btn-del-fixa')) return;
     const id = e.target.closest('tr').dataset.id;
     if (!confirm('Excluir esta despesa fixa?')) return;
-    const { error } = await sb.from('pf_despesas_fixas').delete().eq('id', id);
-    if (!error) { despesasFixas = despesasFixas.filter(r => String(r.id) !== id); renderAll(); }
+    const { error } = await withTimeout(sb.from('pf_despesas_fixas').delete().eq('id', id));
+    if (error) { alert(error.message); return; }
+    despesasFixas = despesasFixas.filter(r => String(r.id) !== id); renderAll();
   });
 
   // ---------------- DESPESAS DIARIAS ----------------
@@ -633,7 +663,10 @@
       parcelas: forma === 'Credito' ? (parseInt(document.getElementById('ddParcelas').value) || 1) : null,
       observacoes: document.getElementById('ddObs').value.trim() || null
     };
-    const { data: inserted, error } = await sb.from('pf_despesas_diarias').insert([row]).select();
+    const btnDd = document.getElementById('btnAddDiaria');
+    btnDd.disabled = true; btnDd.textContent = 'Salvando...';
+    const { data: inserted, error } = await withTimeout(sb.from('pf_despesas_diarias').insert([row]).select());
+    btnDd.disabled = false; btnDd.textContent = '+ Adicionar';
     if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
     despesasDiarias = despesasDiarias.filter(r => r.id !== inserted[0].id); despesasDiarias.push(inserted[0]);
     ['ddDescricao','ddCategoria','ddValor','ddObs'].forEach(id => document.getElementById(id).value = '');
@@ -645,8 +678,9 @@
     if (!e.target.classList.contains('btn-del-diaria')) return;
     const id = e.target.closest('tr').dataset.id;
     if (!confirm('Excluir este lançamento?')) return;
-    const { error } = await sb.from('pf_despesas_diarias').delete().eq('id', id);
-    if (!error) { despesasDiarias = despesasDiarias.filter(r => String(r.id) !== id); renderAll(); }
+    const { error } = await withTimeout(sb.from('pf_despesas_diarias').delete().eq('id', id));
+    if (error) { alert(error.message); return; }
+    despesasDiarias = despesasDiarias.filter(r => String(r.id) !== id); renderAll();
   });
 
   // ---------------- CARTAO DE CREDITO (derivado) ----------------
@@ -801,10 +835,13 @@
     const jaPago = e.target.dataset.pago === 'true';
     const fixa = despesasFixas.find(f => f.id === fixaId);
 
+    const btnToggle = e.target;
+    btnToggle.disabled = true; const originalLabel = btnToggle.textContent; btnToggle.textContent = 'Salvando...';
+
     if (!jaPago) {
       const isoData = tr.querySelector('.pay-date-input').value;
-      if (!isoData) { alert('Selecione a data do pagamento.'); return; }
-      const { data: diariaInserted, error: errDiaria } = await sb.from('pf_despesas_diarias').insert([{
+      if (!isoData) { alert('Selecione a data do pagamento.'); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+      const { data: diariaInserted, error: errDiaria } = await withTimeout(sb.from('pf_despesas_diarias').insert([{
         data: isoData,
         descricao: fixa.tipo + (fixa.descricao ? ' - ' + fixa.descricao : ''),
         categoria: fixa.categoria,
@@ -812,27 +849,29 @@
         valor: fixa.valor,
         parcelas: null,
         observacoes: 'Baixa automática de despesa fixa'
-      }]).select();
-      if (errDiaria) { alert(errDiaria.message); return; }
+      }]).select());
+      if (errDiaria) { alert(errDiaria.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       despesasDiarias.push(diariaInserted[0]);
 
-      const { data: pagInserted, error: errPag } = await sb.from('pf_fixas_pagamentos').insert([{
+      const { data: pagInserted, error: errPag } = await withTimeout(sb.from('pf_fixas_pagamentos').insert([{
         despesa_fixa_id: fixaId,
         mes_referencia: `${mesStr}-01`,
         data_pagamento: isoData,
         despesa_diaria_id: diariaInserted[0].id
-      }]).select();
-      if (errPag) { alert(errPag.message); return; }
+      }]).select());
+      if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       fixasPagamentos.push(pagInserted[0]);
     } else {
       const pag = pagamentoDoMes(fixaId, mesStr);
-      if (!pag) return;
-      if (!confirm('Desmarcar pagamento? O lançamento correspondente em Despesas Diárias será removido.')) return;
+      if (!pag) { btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+      if (!confirm('Desmarcar pagamento? O lançamento correspondente em Despesas Diárias será removido.')) { btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       if (pag.despesa_diaria_id) {
-        await sb.from('pf_despesas_diarias').delete().eq('id', pag.despesa_diaria_id);
+        const { error: errDelDiaria } = await withTimeout(sb.from('pf_despesas_diarias').delete().eq('id', pag.despesa_diaria_id));
+        if (errDelDiaria) { alert(errDelDiaria.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
         despesasDiarias = despesasDiarias.filter(d => d.id !== pag.despesa_diaria_id);
       }
-      await sb.from('pf_fixas_pagamentos').delete().eq('id', pag.id);
+      const { error: errDelPag } = await withTimeout(sb.from('pf_fixas_pagamentos').delete().eq('id', pag.id));
+      if (errDelPag) { alert(errDelPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       fixasPagamentos = fixasPagamentos.filter(p => p.id !== pag.id);
     }
     renderAll();
