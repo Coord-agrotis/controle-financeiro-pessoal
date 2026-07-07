@@ -277,6 +277,7 @@
   const fmtDate = (iso) => { if (!iso) return ''; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
   const monthLabel = (d) => d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('.', '');
   const currentMonthStr = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}`; };
+  const todayISO = () => { const n = new Date(); return `${n.getFullYear()}-${String(n.getMonth()+1).padStart(2,'0')}-${String(n.getDate()).padStart(2,'0')}`; };
 
   function nextMonths(n) {
     const arr = [];
@@ -663,7 +664,7 @@
           <td>${r.categoria || ''}</td>
           <td class="num">${fmtBRL(r.valor)}</td>
           <td class="${pago ? 'paga' : 'pendente'}">${pago ? '✔ Paga' : '● Pendente'}</td>
-          <td>${pago ? fmtDate(pag.data_pagamento) : '-'}</td>
+          <td>${pago ? fmtDate(pag.data_pagamento) : `<input type="date" class="pay-date-input" value="${todayISO()}">`}</td>
           <td><button class="btn btn-toggle-pago" data-pago="${pago}">${pago ? 'Desmarcar' : 'Marcar como paga'}</button></td>
         </tr>`;
     }).join('');
@@ -680,10 +681,8 @@
     const fixa = despesasFixas.find(f => f.id === fixaId);
 
     if (!jaPago) {
-      const dataPagamento = prompt('Data do pagamento (DD/MM/AAAA):', new Date().toLocaleDateString('pt-BR'));
-      if (!dataPagamento) return;
-      const [d, m, y] = dataPagamento.split('/');
-      const isoData = `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+      const isoData = tr.querySelector('.pay-date-input').value;
+      if (!isoData) { alert('Selecione a data do pagamento.'); return; }
       const { data: diariaInserted, error: errDiaria } = await sb.from('pf_despesas_diarias').insert([{
         data: isoData,
         descricao: fixa.tipo + (fixa.descricao ? ' - ' + fixa.descricao : ''),
