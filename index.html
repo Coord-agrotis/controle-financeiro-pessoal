@@ -1,0 +1,516 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Controle Financeiro Pessoal</title>
+<style>
+  :root {
+    --bg: #f4f6f8;
+    --card-bg: #ffffff;
+    --border: #e2e6ea;
+    --text: #1f2933;
+    --muted: #6b7785;
+    --accent: #2563eb;
+    --accent-light: #eaf0fe;
+    --danger: #dc2626;
+    --credito: #d97706;
+    --credito-light: #fef3e2;
+    --shadow: 0 1px 3px rgba(0,0,0,0.06), 0 1px 2px rgba(0,0,0,0.04);
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Segoe UI', Arial, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    padding: 24px 32px 60px;
+  }
+  header { margin-bottom: 20px; display: flex; justify-content: space-between; align-items: flex-start; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  .subtitle { color: var(--muted); font-size: 13px; }
+
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 18px 0 24px; }
+  .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; box-shadow: var(--shadow); }
+  .card .label { font-size: 12px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .card .value { font-size: 20px; font-weight: 600; margin-top: 4px; }
+  .card.total { border-color: var(--accent); background: var(--accent-light); }
+  .card.total .value { color: var(--accent); }
+  .card.credito { border-color: var(--credito); background: var(--credito-light); }
+  .card.credito .value { color: var(--credito); }
+
+  .form-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+  .field { display: flex; flex-direction: column; gap: 4px; }
+  .field label { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .03em; }
+  .field input, .field select { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; background: #fff; }
+  .field.grow input { min-width: 220px; }
+
+  table { width: 100%; border-collapse: collapse; background: var(--card-bg); border-radius: 10px; overflow: hidden; box-shadow: var(--shadow); font-size: 13px; }
+  thead th { background: #1f2933; color: #fff; text-align: left; padding: 10px 12px; font-weight: 600; white-space: nowrap; }
+  tbody td { padding: 8px 12px; border-bottom: 1px solid var(--border); white-space: nowrap; }
+  tbody tr:hover { background: #fafbfc; }
+  td.num, th.num { text-align: right; }
+  td.desc-col { white-space: normal; min-width: 200px; max-width: 360px; }
+  tfoot td { padding: 10px 12px; font-weight: 700; background: #f0f2f5; border-top: 2px solid var(--border); }
+  .empty-msg { text-align: center; padding: 24px; color: var(--muted); }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 11px; font-weight: 600; }
+  .badge.debito { background: var(--accent-light); color: var(--accent); }
+  .badge.credito { background: var(--credito-light); color: var(--credito); }
+
+  .btn { padding: 8px 14px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--text); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .btn:hover { background: #f0f2f5; }
+  .btn-primary { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .btn-primary:hover { background: #1d4ed8; }
+  .btn-icon { border: none; background: transparent; cursor: pointer; font-size: 14px; padding: 4px 6px; border-radius: 6px; line-height: 1; }
+  .btn-icon:hover { background: #fde8e8; }
+  .hint { font-size: 12px; color: var(--muted); margin: -6px 0 16px; }
+  .hint.error { color: var(--danger); }
+
+  .tabs { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 16px; }
+  .tab-btn { padding: 9px 18px; border-radius: 8px; border: 1px solid var(--border); background: #fff; color: var(--muted); font-size: 13px; font-weight: 600; cursor: pointer; }
+  .tab-btn:hover { background: #f0f2f5; }
+  .tab-btn.active { background: var(--accent); border-color: var(--accent); color: #fff; }
+  .view { display: none; }
+  .view.active { display: block; }
+
+  .matrix-wrap { overflow-x: auto; }
+  .matrix-wrap table { min-width: 900px; }
+
+  #loginScreen { max-width: 360px; margin: 90px auto; padding: 28px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; box-shadow: var(--shadow); }
+  #loginScreen h2 { margin: 0 0 4px; font-size: 19px; }
+  #loginScreen .subtitle { margin-bottom: 20px; }
+  #loginScreen input { width: 100%; margin-bottom: 10px; padding: 10px 12px; border: 1px solid var(--border); border-radius: 8px; font-size: 14px; }
+  #loginScreen button { width: 100%; padding: 10px; margin-top: 4px; }
+
+  .user-badge { font-size: 12px; color: var(--muted); text-align: right; }
+  .user-badge button { margin-left: 8px; }
+  .section-title { font-size: 15px; font-weight: 700; margin: 24px 0 10px; }
+</style>
+</head>
+<body>
+
+<div id="loginScreen">
+  <h2>Controle Financeiro Pessoal</h2>
+  <div class="subtitle">Entre com sua conta para acessar o painel.</div>
+  <input type="email" id="loginEmail" placeholder="E-mail" autocomplete="username">
+  <input type="password" id="loginPassword" placeholder="Senha" autocomplete="current-password">
+  <button class="btn btn-primary" id="btnLogin">Entrar</button>
+  <div class="hint" id="loginStatus"></div>
+</div>
+
+<div id="appRoot" style="display:none">
+
+<header>
+  <div>
+    <h1>Controle Financeiro Pessoal</h1>
+    <div class="subtitle" id="lastUpdate"></div>
+  </div>
+  <div class="user-badge">
+    <span id="userEmail"></span>
+    <button class="btn" id="btnLogout">Sair</button>
+  </div>
+</header>
+
+<div class="tabs">
+  <button class="tab-btn active" data-view="fixas">📌 Despesas Fixas</button>
+  <button class="tab-btn" data-view="diarias">📅 Despesas Diárias</button>
+  <button class="tab-btn" data-view="cartao">💳 Cartão de Crédito</button>
+  <button class="tab-btn" data-view="previsao">📊 Previsão</button>
+</div>
+
+<!-- ================= DESPESAS FIXAS ================= -->
+<div id="viewFixas" class="view active">
+  <div class="cards" id="cardsFixas"></div>
+
+  <div class="form-row">
+    <div class="field grow"><label>Tipo de Despesa</label><input type="text" id="fxTipo" placeholder="Ex: Aluguel"></div>
+    <div class="field grow"><label>Descrição</label><input type="text" id="fxDescricao" placeholder="Opcional"></div>
+    <div class="field"><label>Categoria</label><input type="text" id="fxCategoria" placeholder="Ex: Moradia"></div>
+    <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="fxValor"></div>
+    <div class="field"><label>Dia Vencimento</label><input type="number" min="1" max="31" id="fxDia"></div>
+    <div class="field grow"><label>Observações</label><input type="text" id="fxObs"></div>
+    <button class="btn btn-primary" id="btnAddFixa">+ Adicionar</button>
+  </div>
+  <div class="hint" id="fxStatus"></div>
+
+  <table>
+    <thead><tr><th>Tipo</th><th>Descrição</th><th>Categoria</th><th class="num">Valor</th><th>Vencimento</th><th>Observações</th><th></th></tr></thead>
+    <tbody id="fxTbody"></tbody>
+    <tfoot><tr><td colspan="3">TOTAL MENSAL</td><td class="num" id="fxTotal"></td><td colspan="3"></td></tr></tfoot>
+  </table>
+</div>
+
+<!-- ================= DESPESAS DIARIAS ================= -->
+<div id="viewDiarias" class="view">
+  <div class="cards" id="cardsDiarias"></div>
+
+  <div class="form-row">
+    <div class="field"><label>Data</label><input type="date" id="ddData"></div>
+    <div class="field grow"><label>Descrição</label><input type="text" id="ddDescricao"></div>
+    <div class="field"><label>Categoria / Onde está indo</label><input type="text" id="ddCategoria"></div>
+    <div class="field"><label>Forma de Pagamento</label>
+      <select id="ddForma"><option value="Debito">Débito</option><option value="Credito">Crédito</option></select>
+    </div>
+    <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="ddValor"></div>
+    <div class="field" id="ddParcelasField" style="display:none"><label>Parcelas</label><input type="number" min="1" max="48" value="1" id="ddParcelas"></div>
+    <div class="field grow"><label>Observações</label><input type="text" id="ddObs"></div>
+    <button class="btn btn-primary" id="btnAddDiaria">+ Adicionar</button>
+  </div>
+  <div class="hint" id="ddStatus"></div>
+
+  <table>
+    <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th class="num">Valor</th><th>Parcelas</th><th>Observações</th><th></th></tr></thead>
+    <tbody id="ddTbody"></tbody>
+    <tfoot><tr><td colspan="4">TOTAL GERAL</td><td class="num" id="ddTotal"></td><td colspan="3"></td></tr></tfoot>
+  </table>
+</div>
+
+<!-- ================= CARTAO DE CREDITO ================= -->
+<div id="viewCartao" class="view">
+  <div class="subtitle" style="margin-bottom:14px">Gerado automaticamente a partir dos lançamentos de "Despesas Diárias" pagos no Crédito.</div>
+  <div class="cards" id="cardsCartao"></div>
+
+  <div class="section-title">Compras parceladas</div>
+  <table>
+    <thead><tr><th>Data da Compra</th><th>Descrição</th><th>Categoria</th><th class="num">Valor Total</th><th class="num">Parcelas</th><th class="num">Valor da Parcela</th><th>Parcela Atual</th></tr></thead>
+    <tbody id="ccTbody"></tbody>
+  </table>
+
+  <div class="section-title">Projeção de fatura (próximos 12 meses)</div>
+  <div class="matrix-wrap">
+    <table>
+      <thead><tr id="ccMatrixHead"><th>Descrição</th></tr></thead>
+      <tbody id="ccMatrixBody"></tbody>
+      <tfoot><tr id="ccMatrixTotal"></tr></tfoot>
+    </table>
+  </div>
+</div>
+
+<!-- ================= PREVISAO ================= -->
+<div id="viewPrevisao" class="view">
+  <div class="subtitle" style="margin-bottom:14px">Projeção das despesas fixas para os próximos 12 meses (assume o mesmo valor todo mês).</div>
+  <div class="matrix-wrap">
+    <table>
+      <thead><tr id="pvMatrixHead"><th>Tipo de Despesa</th></tr></thead>
+      <tbody id="pvMatrixBody"></tbody>
+      <tfoot><tr id="pvMatrixTotal"></tr></tfoot>
+    </table>
+  </div>
+</div>
+
+</div>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+<script>
+  const SUPABASE_URL = 'https://pxgmnimomvtukidyfqri.supabase.co';
+  const SUPABASE_ANON_KEY = 'sb_publishable_bvMvS3PPd2g9kyPAvhsBsw_Tg_VtF91';
+  const sb = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  let despesasFixas = [];
+  let despesasDiarias = [];
+  let realtimeReady = false;
+
+  const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+  const fmtDate = (iso) => { if (!iso) return ''; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
+  const monthLabel = (d) => d.toLocaleDateString('pt-BR', { month: 'short', year: 'numeric' }).replace('.', '');
+
+  function nextMonths(n) {
+    const arr = [];
+    const now = new Date();
+    const base = new Date(now.getFullYear(), now.getMonth(), 1);
+    for (let i = 0; i < n; i++) arr.push(new Date(base.getFullYear(), base.getMonth() + i, 1));
+    return arr;
+  }
+
+  // ---------------- AUTH ----------------
+  function showApp() { document.getElementById('loginScreen').style.display = 'none'; document.getElementById('appRoot').style.display = 'block'; }
+  function showLogin() { document.getElementById('loginScreen').style.display = 'block'; document.getElementById('appRoot').style.display = 'none'; }
+
+  document.getElementById('btnLogin').addEventListener('click', async () => {
+    const email = document.getElementById('loginEmail').value.trim();
+    const password = document.getElementById('loginPassword').value;
+    const statusEl = document.getElementById('loginStatus');
+    statusEl.textContent = 'Entrando...'; statusEl.className = 'hint';
+    const { error } = await sb.auth.signInWithPassword({ email, password });
+    if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; }
+  });
+  document.getElementById('loginPassword').addEventListener('keydown', (e) => { if (e.key === 'Enter') document.getElementById('btnLogin').click(); });
+  document.getElementById('btnLogout').addEventListener('click', () => sb.auth.signOut());
+
+  sb.auth.onAuthStateChange(async (event, session) => {
+    if (session && session.user) {
+      document.getElementById('userEmail').textContent = session.user.email;
+      showApp();
+      await loadData();
+      if (!realtimeReady) { subscribeRealtime(); realtimeReady = true; }
+    } else {
+      showLogin();
+    }
+  });
+
+  // ---------------- DATA LOADING ----------------
+  async function loadData() {
+    const [fxRes, ddRes] = await Promise.all([
+      sb.from('pf_despesas_fixas').select('*').order('dia_vencimento', { ascending: true }),
+      sb.from('pf_despesas_diarias').select('*').order('data', { ascending: false })
+    ]);
+    despesasFixas = fxRes.data || [];
+    despesasDiarias = ddRes.data || [];
+    renderAll();
+    updateLastUpdate();
+  }
+
+  function subscribeRealtime() {
+    sb.channel('pf-fixas-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pf_despesas_fixas' }, (payload) => {
+        if (payload.eventType === 'DELETE') despesasFixas = despesasFixas.filter(r => r.id !== payload.old.id);
+        else {
+          despesasFixas = despesasFixas.filter(r => r.id !== payload.new.id);
+          despesasFixas.push(payload.new);
+        }
+        renderAll(); updateLastUpdate();
+      }).subscribe();
+
+    sb.channel('pf-diarias-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pf_despesas_diarias' }, (payload) => {
+        if (payload.eventType === 'DELETE') despesasDiarias = despesasDiarias.filter(r => r.id !== payload.old.id);
+        else {
+          despesasDiarias = despesasDiarias.filter(r => r.id !== payload.new.id);
+          despesasDiarias.push(payload.new);
+        }
+        renderAll(); updateLastUpdate();
+      }).subscribe();
+  }
+
+  function updateLastUpdate() {
+    document.getElementById('lastUpdate').textContent = 'Atualizado às ' + new Date().toLocaleTimeString('pt-BR');
+  }
+
+  function renderAll() { renderFixas(); renderDiarias(); renderCartao(); renderPrevisao(); }
+
+  // ---------------- TABS ----------------
+  document.querySelectorAll('.tab-btn').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+      btn.classList.add('active');
+      const view = btn.dataset.view;
+      document.getElementById('view' + view.charAt(0).toUpperCase() + view.slice(1)).classList.add('active');
+    });
+  });
+
+  // ---------------- DESPESAS FIXAS ----------------
+  function renderFixas() {
+    const tbody = document.getElementById('fxTbody');
+    if (!despesasFixas.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma despesa fixa cadastrada.</td></tr>';
+    } else {
+      tbody.innerHTML = despesasFixas.map(r => `
+        <tr data-id="${r.id}">
+          <td>${r.tipo || ''}</td>
+          <td class="desc-col">${r.descricao || ''}</td>
+          <td>${r.categoria || ''}</td>
+          <td class="num">${fmtBRL(r.valor)}</td>
+          <td>${r.dia_vencimento ? 'Dia ' + r.dia_vencimento : ''}</td>
+          <td class="desc-col">${r.observacoes || ''}</td>
+          <td><button class="btn-icon btn-del-fixa" title="Excluir">🗑️</button></td>
+        </tr>`).join('');
+    }
+    const total = despesasFixas.reduce((s, r) => s + Number(r.valor || 0), 0);
+    document.getElementById('fxTotal').textContent = fmtBRL(total);
+    document.getElementById('cardsFixas').innerHTML = `
+      <div class="card total"><div class="label">Total Mensal Fixo</div><div class="value">${fmtBRL(total)}</div></div>
+      <div class="card"><div class="label">Qtd. Despesas</div><div class="value">${despesasFixas.length}</div></div>`;
+  }
+
+  document.getElementById('btnAddFixa').addEventListener('click', async () => {
+    const tipo = document.getElementById('fxTipo').value.trim();
+    const valor = parseFloat(document.getElementById('fxValor').value);
+    const statusEl = document.getElementById('fxStatus');
+    if (!tipo || isNaN(valor)) { statusEl.textContent = 'Informe ao menos Tipo e Valor.'; statusEl.className = 'hint error'; return; }
+    const row = {
+      tipo,
+      descricao: document.getElementById('fxDescricao').value.trim() || null,
+      categoria: document.getElementById('fxCategoria').value.trim() || null,
+      valor,
+      dia_vencimento: parseInt(document.getElementById('fxDia').value) || null,
+      observacoes: document.getElementById('fxObs').value.trim() || null
+    };
+    const { data, error } = await sb.from('pf_despesas_fixas').insert([row]).select();
+    if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
+    despesasFixas = despesasFixas.filter(r => r.id !== data[0].id); despesasFixas.push(data[0]);
+    ['fxTipo','fxDescricao','fxCategoria','fxValor','fxDia','fxObs'].forEach(id => document.getElementById(id).value = '');
+    statusEl.textContent = ''; renderAll();
+  });
+
+  document.getElementById('fxTbody').addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('btn-del-fixa')) return;
+    const id = e.target.closest('tr').dataset.id;
+    if (!confirm('Excluir esta despesa fixa?')) return;
+    const { error } = await sb.from('pf_despesas_fixas').delete().eq('id', id);
+    if (!error) { despesasFixas = despesasFixas.filter(r => String(r.id) !== id); renderAll(); }
+  });
+
+  // ---------------- DESPESAS DIARIAS ----------------
+  document.getElementById('ddForma').addEventListener('change', (e) => {
+    document.getElementById('ddParcelasField').style.display = e.target.value === 'Credito' ? 'flex' : 'none';
+  });
+
+  function renderDiarias() {
+    const tbody = document.getElementById('ddTbody');
+    const rows = [...despesasDiarias].sort((a,b) => (b.data || '').localeCompare(a.data || ''));
+    if (!rows.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhum lançamento ainda.</td></tr>';
+    } else {
+      tbody.innerHTML = rows.map(r => `
+        <tr data-id="${r.id}">
+          <td>${fmtDate(r.data)}</td>
+          <td class="desc-col">${r.descricao || ''}</td>
+          <td>${r.categoria || ''}</td>
+          <td><span class="badge ${r.forma_pagamento === 'Credito' ? 'credito' : 'debito'}">${r.forma_pagamento === 'Credito' ? 'Crédito' : 'Débito'}</span></td>
+          <td class="num">${fmtBRL(r.valor)}</td>
+          <td>${r.forma_pagamento === 'Credito' ? (r.parcelas || 1) + 'x' : '-'}</td>
+          <td class="desc-col">${r.observacoes || ''}</td>
+          <td><button class="btn-icon btn-del-diaria" title="Excluir">🗑️</button></td>
+        </tr>`).join('');
+    }
+    const total = rows.reduce((s, r) => s + Number(r.valor || 0), 0);
+    const totalDebito = rows.filter(r => r.forma_pagamento === 'Debito').reduce((s, r) => s + Number(r.valor || 0), 0);
+    const totalCredito = rows.filter(r => r.forma_pagamento === 'Credito').reduce((s, r) => s + Number(r.valor || 0), 0);
+    document.getElementById('ddTotal').textContent = fmtBRL(total);
+    document.getElementById('cardsDiarias').innerHTML = `
+      <div class="card"><div class="label">Total Débito</div><div class="value">${fmtBRL(totalDebito)}</div></div>
+      <div class="card credito"><div class="label">Total Crédito</div><div class="value">${fmtBRL(totalCredito)}</div></div>
+      <div class="card total"><div class="label">Total Geral</div><div class="value">${fmtBRL(total)}</div></div>`;
+  }
+
+  document.getElementById('btnAddDiaria').addEventListener('click', async () => {
+    const data = document.getElementById('ddData').value;
+    const descricao = document.getElementById('ddDescricao').value.trim();
+    const valor = parseFloat(document.getElementById('ddValor').value);
+    const forma = document.getElementById('ddForma').value;
+    const statusEl = document.getElementById('ddStatus');
+    if (!data || !descricao || isNaN(valor)) { statusEl.textContent = 'Informe Data, Descrição e Valor.'; statusEl.className = 'hint error'; return; }
+    const row = {
+      data,
+      descricao,
+      categoria: document.getElementById('ddCategoria').value.trim() || null,
+      forma_pagamento: forma,
+      valor,
+      parcelas: forma === 'Credito' ? (parseInt(document.getElementById('ddParcelas').value) || 1) : null,
+      observacoes: document.getElementById('ddObs').value.trim() || null
+    };
+    const { data: inserted, error } = await sb.from('pf_despesas_diarias').insert([row]).select();
+    if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
+    despesasDiarias = despesasDiarias.filter(r => r.id !== inserted[0].id); despesasDiarias.push(inserted[0]);
+    ['ddDescricao','ddCategoria','ddValor','ddObs'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('ddParcelas').value = 1;
+    statusEl.textContent = ''; renderAll();
+  });
+
+  document.getElementById('ddTbody').addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('btn-del-diaria')) return;
+    const id = e.target.closest('tr').dataset.id;
+    if (!confirm('Excluir este lançamento?')) return;
+    const { error } = await sb.from('pf_despesas_diarias').delete().eq('id', id);
+    if (!error) { despesasDiarias = despesasDiarias.filter(r => String(r.id) !== id); renderAll(); }
+  });
+
+  // ---------------- CARTAO DE CREDITO (derivado) ----------------
+  function creditoCompras() {
+    return despesasDiarias
+      .filter(r => r.forma_pagamento === 'Credito' && r.data)
+      .map(r => {
+        const parcelas = Math.max(1, parseInt(r.parcelas) || 1);
+        const valorParcela = Number(r.valor || 0) / parcelas;
+        const [y, m, d] = r.data.split('-').map(Number);
+        const compraMonth = new Date(y, m - 1, 1);
+        const now = new Date();
+        const nowMonth = new Date(now.getFullYear(), now.getMonth(), 1);
+        let mesesPassados = (nowMonth.getFullYear() - compraMonth.getFullYear()) * 12 + (nowMonth.getMonth() - compraMonth.getMonth());
+        const parcelaAtual = Math.min(parcelas, Math.max(1, mesesPassados + 1));
+        return { ...r, parcelas, valorParcela, compraMonth, parcelaAtual };
+      })
+      .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
+  }
+
+  function renderCartao() {
+    const compras = creditoCompras();
+    const tbody = document.getElementById('ccTbody');
+    if (!compras.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma compra no crédito lançada.</td></tr>';
+    } else {
+      tbody.innerHTML = compras.map(r => `
+        <tr>
+          <td>${fmtDate(r.data)}</td>
+          <td class="desc-col">${r.descricao || ''}</td>
+          <td>${r.categoria || ''}</td>
+          <td class="num">${fmtBRL(r.valor)}</td>
+          <td class="num">${r.parcelas}x</td>
+          <td class="num">${fmtBRL(r.valorParcela)}</td>
+          <td>${r.parcelaAtual}/${r.parcelas}</td>
+        </tr>`).join('');
+    }
+
+    const months = nextMonths(12);
+    const head = document.getElementById('ccMatrixHead');
+    head.innerHTML = '<th>Descrição</th>' + months.map(m => `<th class="num">${monthLabel(m)}</th>`).join('');
+
+    const body = document.getElementById('ccMatrixBody');
+    if (!compras.length) {
+      body.innerHTML = `<tr><td colspan="${months.length + 1}" class="empty-msg">Sem compras parceladas em aberto.</td></tr>`;
+    } else {
+      body.innerHTML = compras.map(r => {
+        const cells = months.map(m => {
+          const idx = (m.getFullYear() - r.compraMonth.getFullYear()) * 12 + (m.getMonth() - r.compraMonth.getMonth());
+          const active = idx >= 0 && idx < r.parcelas;
+          return `<td class="num">${active ? fmtBRL(r.valorParcela) : '-'}</td>`;
+        }).join('');
+        return `<tr><td class="desc-col">${r.descricao || ''}</td>${cells}</tr>`;
+      }).join('');
+    }
+
+    const totalsRow = months.map(m => {
+      const total = compras.reduce((s, r) => {
+        const idx = (m.getFullYear() - r.compraMonth.getFullYear()) * 12 + (m.getMonth() - r.compraMonth.getMonth());
+        return s + ((idx >= 0 && idx < r.parcelas) ? r.valorParcela : 0);
+      }, 0);
+      return `<td class="num">${fmtBRL(total)}</td>`;
+    }).join('');
+    document.getElementById('ccMatrixTotal').innerHTML = '<td>TOTAL FATURA</td>' + totalsRow;
+
+    const totalAberto = compras.reduce((s, r) => s + (r.parcelas - r.parcelaAtual + 1) * r.valorParcela, 0);
+    const faturaAtual = compras.reduce((s, r) => s + (r.parcelaAtual <= r.parcelas ? r.valorParcela : 0), 0);
+    document.getElementById('cardsCartao').innerHTML = `
+      <div class="card credito"><div class="label">Fatura Mês Atual</div><div class="value">${fmtBRL(faturaAtual)}</div></div>
+      <div class="card"><div class="label">Total em Aberto</div><div class="value">${fmtBRL(totalAberto)}</div></div>
+      <div class="card"><div class="label">Compras Ativas</div><div class="value">${compras.filter(r => r.parcelaAtual <= r.parcelas).length}</div></div>`;
+  }
+
+  // ---------------- PREVISAO (derivado) ----------------
+  function renderPrevisao() {
+    const months = nextMonths(12);
+    const head = document.getElementById('pvMatrixHead');
+    head.innerHTML = '<th>Tipo de Despesa</th>' + months.map(m => `<th class="num">${monthLabel(m)}</th>`).join('') + '<th class="num">Total Anual</th>';
+
+    const body = document.getElementById('pvMatrixBody');
+    if (!despesasFixas.length) {
+      body.innerHTML = `<tr><td colspan="${months.length + 2}" class="empty-msg">Cadastre despesas fixas para ver a previsão.</td></tr>`;
+    } else {
+      body.innerHTML = despesasFixas.map(r => {
+        const valor = Number(r.valor || 0);
+        const cells = months.map(() => `<td class="num">${fmtBRL(valor)}</td>`).join('');
+        return `<tr><td class="desc-col">${r.tipo || ''}</td>${cells}<td class="num">${fmtBRL(valor * months.length)}</td></tr>`;
+      }).join('');
+    }
+
+    const totalsRow = months.map(() => {
+      const total = despesasFixas.reduce((s, r) => s + Number(r.valor || 0), 0);
+      return `<td class="num">${fmtBRL(total)}</td>`;
+    }).join('');
+    const grandTotal = despesasFixas.reduce((s, r) => s + Number(r.valor || 0), 0) * months.length;
+    document.getElementById('pvMatrixTotal').innerHTML = '<td>TOTAL MENSAL</td>' + totalsRow + `<td class="num">${fmtBRL(grandTotal)}</td>`;
+  }
+</script>
+</body>
+</html>
