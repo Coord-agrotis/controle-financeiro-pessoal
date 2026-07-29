@@ -201,7 +201,7 @@
     <input type="month" id="fxMes">
   </div>
   <table>
-    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Valor</th><th>Status</th><th>Data Pagamento</th><th></th></tr></thead>
+    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Valor Previsto</th><th>Status</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
     <tbody id="fxChecklistTbody"></tbody>
   </table>
 </div>
@@ -806,19 +806,23 @@
     const tbody = document.getElementById('fxChecklistTbody');
     const ativas = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa);
     if (!ativas.length) {
-      tbody.innerHTML = '<tr><td colspan="6" class="empty-msg">Nenhuma despesa fixa ativa neste mês.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma despesa fixa ativa neste mês.</td></tr>';
       return;
     }
     tbody.innerHTML = ativas.map(r => {
       const pag = pagamentoDoMes(r.id, mesStr);
       const pago = !!pag;
       const status = statusFixaNoMes(r, mesStr, pago);
+      const valorRealCell = pago
+        ? fmtBRL(pag.valor_real ?? r.valor)
+        : `<input type="number" step="0.01" class="pay-valor-input" value="${r.valor}" style="width:100px">`;
       return `
         <tr data-fixa-id="${r.id}">
           <td>${r.tipo || ''}</td>
           <td>${r.categoria || ''}</td>
           <td class="num">${fmtBRL(r.valor)}</td>
           <td class="${status.statusClass}">${status.statusLabel}</td>
+          <td class="num">${valorRealCell}</td>
           <td>${pago ? fmtDate(pag.data_pagamento) : `<input type="date" class="pay-date-input" value="${todayISO()}">`}</td>
           <td><button class="btn btn-toggle-pago" data-pago="${pago}">${pago ? 'Desmarcar' : 'Marcar como paga'}</button></td>
         </tr>`;
@@ -841,12 +845,15 @@
     if (!jaPago) {
       const isoData = tr.querySelector('.pay-date-input').value;
       if (!isoData) { alert('Selecione a data do pagamento.'); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+      const valorRealInput = tr.querySelector('.pay-valor-input').value;
+      const valorReal = valorRealInput !== '' ? parseFloat(valorRealInput) : fixa.valor;
+      if (isNaN(valorReal)) { alert('Informe um valor real válido.'); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       const { data: diariaInserted, error: errDiaria } = await withTimeout(sb.from('pf_despesas_diarias').insert([{
         data: isoData,
         descricao: fixa.tipo + (fixa.descricao ? ' - ' + fixa.descricao : ''),
         categoria: fixa.categoria,
         forma_pagamento: 'Debito',
-        valor: fixa.valor,
+        valor: valorReal,
         parcelas: null,
         observacoes: 'Baixa automática de despesa fixa'
       }]).select());
@@ -857,6 +864,7 @@
         despesa_fixa_id: fixaId,
         mes_referencia: `${mesStr}-01`,
         data_pagamento: isoData,
+        valor_real: valorReal,
         despesa_diaria_id: diariaInserted[0].id
       }]).select());
       if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
