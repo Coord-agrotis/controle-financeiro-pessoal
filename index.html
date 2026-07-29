@@ -40,6 +40,8 @@
   .card.credito .value { color: var(--credito); }
   .card.atrasada { border-color: var(--danger); background: #fef2f2; }
   .card.atrasada .value { color: var(--danger); }
+  .card.success { border-color: #16a34a; background: #f0fdf4; }
+  .card.success .value { color: #16a34a; }
 
   .form-row { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin-bottom: 16px; background: var(--card-bg); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
   .field { display: flex; flex-direction: column; gap: 4px; }
@@ -99,6 +101,13 @@
   .atrasada { color: var(--danger); font-weight: 600; }
   .pendente { color: var(--muted); font-weight: 600; }
   tr.encerrada td { color: var(--muted); opacity: 0.6; }
+
+  .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
+  .status-badge.atrasada { background: #fee2e2; color: #dc2626; }
+  .status-badge.pendente { background: #f1f2f4; color: var(--muted); }
+  .status-badge.paga { background: #dcfce7; color: #16a34a; }
+  tr.row-atrasada { background: #fef7f7; }
+  tr.row-paga { background: #f6fdf9; }
   .month-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .month-picker input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
 
@@ -139,6 +148,7 @@
 
 <div class="tabs">
   <button class="tab-btn active" data-view="dashboard">📊 Dashboard</button>
+  <button class="tab-btn" data-view="contasmes">✅ Contas do Mês</button>
   <button class="tab-btn" data-view="fixas">📌 Despesas Fixas</button>
   <button class="tab-btn" data-view="diarias">📅 Despesas Diárias</button>
   <button class="tab-btn" data-view="cartao">💳 Cartão de Crédito</button>
@@ -194,15 +204,19 @@
     <tbody id="fxTbody"></tbody>
     <tfoot><tr><td colspan="3">TOTAL MENSAL</td><td class="num" id="fxTotal"></td><td colspan="4"></td></tr></tfoot>
   </table>
+</div>
 
-  <div class="section-title">Status de pagamento do mês</div>
+<!-- ================= CONTAS DO MES ================= -->
+<div id="viewContasmes" class="view">
   <div class="month-picker">
     <label class="subtitle">Mês:</label>
-    <input type="month" id="fxMes">
+    <input type="month" id="cmMes">
   </div>
+  <div class="cards" id="cardsContasMes"></div>
+
   <table>
-    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Valor Previsto</th><th>Status</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
-    <tbody id="fxChecklistTbody"></tbody>
+    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Provisão</th><th>Status</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
+    <tbody id="cmChecklistTbody"></tbody>
   </table>
 </div>
 
@@ -801,41 +815,62 @@
     return atrasada ? { statusClass: 'atrasada', statusLabel: '⚠ Atrasada' } : { statusClass: 'pendente', statusLabel: '● Pendente' };
   }
 
+  const STATUS_ORDER = { atrasada: 0, pendente: 1, paga: 2 };
+
   function renderChecklistFixas() {
-    const mesStr = document.getElementById('fxMes').value || currentMonthStr();
-    const tbody = document.getElementById('fxChecklistTbody');
+    const mesStr = document.getElementById('cmMes').value || currentMonthStr();
+    const tbody = document.getElementById('cmChecklistTbody');
     const ativas = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa);
-    if (!ativas.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma despesa fixa ativa neste mês.</td></tr>';
-      return;
-    }
-    tbody.innerHTML = ativas.map(r => {
+
+    const linhas = ativas.map(r => {
       const pag = pagamentoDoMes(r.id, mesStr);
       const pago = !!pag;
       const status = statusFixaNoMes(r, mesStr, pago);
-      const valorRealCell = pago
-        ? fmtBRL(pag.valor_real ?? r.valor)
-        : `<input type="number" step="0.01" class="pay-valor-input" value="${r.valor}" style="width:100px">`;
-      return `
-        <tr data-fixa-id="${r.id}">
-          <td>${r.tipo || ''}</td>
-          <td>${r.categoria || ''}</td>
-          <td class="num">${fmtBRL(r.valor)}</td>
-          <td class="${status.statusClass}">${status.statusLabel}</td>
-          <td class="num">${valorRealCell}</td>
-          <td>${pago ? fmtDate(pag.data_pagamento) : `<input type="date" class="pay-date-input" value="${todayISO()}">`}</td>
-          <td><button class="btn btn-toggle-pago" data-pago="${pago}">${pago ? 'Desmarcar' : 'Marcar como paga'}</button></td>
-        </tr>`;
-    }).join('');
+      return { r, pag, pago, status };
+    }).sort((a, b) => STATUS_ORDER[a.status.statusClass] - STATUS_ORDER[b.status.statusClass]);
+
+    if (!linhas.length) {
+      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma despesa fixa ativa neste mês.</td></tr>';
+    } else {
+      tbody.innerHTML = linhas.map(({ r, pag, pago, status }) => {
+        const valorRealCell = pago
+          ? fmtBRL(pag.valor_real ?? r.valor)
+          : `<input type="number" step="0.01" class="pay-valor-input" value="${r.valor}" style="width:100px">`;
+        const rowClass = status.statusClass === 'atrasada' ? 'row-atrasada' : (status.statusClass === 'paga' ? 'row-paga' : '');
+        return `
+          <tr data-fixa-id="${r.id}" class="${rowClass}">
+            <td>${r.tipo || ''}</td>
+            <td>${r.categoria || ''}</td>
+            <td class="num">${fmtBRL(r.valor)}</td>
+            <td><span class="status-badge ${status.statusClass}">${status.statusLabel}</span></td>
+            <td class="num">${valorRealCell}</td>
+            <td>${pago ? fmtDate(pag.data_pagamento) : `<input type="date" class="pay-date-input" value="${todayISO()}">`}</td>
+            <td><button class="btn btn-toggle-pago" data-pago="${pago}">${pago ? 'Desmarcar' : 'Marcar como paga'}</button></td>
+          </tr>`;
+      }).join('');
+    }
+
+    const pagas = linhas.filter(l => l.pago);
+    const totalProvisionado = ativas.reduce((s, r) => s + Number(r.valor || 0), 0);
+    const totalConfirmado = pagas.reduce((s, { pag, r }) => s + Number(pag.valor_real ?? r.valor), 0);
+    const provisaoDasPagas = pagas.reduce((s, { r }) => s + Number(r.valor || 0), 0);
+    const diferenca = totalConfirmado - provisaoDasPagas;
+    const atrasadasCount = linhas.filter(l => l.status.statusClass === 'atrasada').length;
+
+    document.getElementById('cardsContasMes').innerHTML = `
+      <div class="card total"><div class="label">Provisionado</div><div class="value">${fmtBRL(totalProvisionado)}</div></div>
+      <div class="card success"><div class="label">Confirmado (real)</div><div class="value">${fmtBRL(totalConfirmado)}</div></div>
+      <div class="card atrasada"><div class="label">Atrasadas</div><div class="value">${atrasadasCount}</div></div>
+      <div class="card"><div class="label">Diferença (real - provisão)</div><div class="value">${diferenca >= 0 ? '+' : ''}${fmtBRL(diferenca)}</div></div>`;
   }
 
-  document.getElementById('fxMes').addEventListener('change', renderChecklistFixas);
+  document.getElementById('cmMes').addEventListener('change', renderChecklistFixas);
 
-  document.getElementById('fxChecklistTbody').addEventListener('click', async (e) => {
+  document.getElementById('cmChecklistTbody').addEventListener('click', async (e) => {
     if (!e.target.classList.contains('btn-toggle-pago')) return;
     const tr = e.target.closest('tr');
     const fixaId = parseInt(tr.dataset.fixaId);
-    const mesStr = document.getElementById('fxMes').value || currentMonthStr();
+    const mesStr = document.getElementById('cmMes').value || currentMonthStr();
     const jaPago = e.target.dataset.pago === 'true';
     const fixa = despesasFixas.find(f => f.id === fixaId);
 
@@ -928,7 +963,7 @@
 
   document.getElementById('dashMes').addEventListener('change', renderDashboard);
 
-  document.getElementById('fxMes').value = currentMonthStr();
+  document.getElementById('cmMes').value = currentMonthStr();
   document.getElementById('dashMes').value = currentMonthStr();
 </script>
 </body>
