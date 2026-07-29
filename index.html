@@ -161,6 +161,8 @@
   <div class="month-picker">
     <label class="subtitle">Mês de referência:</label>
     <input type="month" id="dashMes">
+    <label class="subtitle" style="margin-left:14px">Categoria:</label>
+    <select id="dashFiltroCategoria"><option value="">Todas</option></select>
   </div>
   <div class="cards" id="cardsDashboard"></div>
 
@@ -193,11 +195,24 @@
     <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="fxValor"></div>
     <div class="field"><label>Dia Vencimento</label><input type="number" min="1" max="31" id="fxDia"></div>
     <div class="field"><label>Parcelas Restantes</label><input type="number" min="1" id="fxParcelasRestantes" placeholder="Sem prazo"></div>
+    <div class="field"><label>Data Final</label><input type="month" id="fxDataFinal"></div>
     <div class="field grow"><label>Observações</label><input type="text" id="fxObs"></div>
     <button class="btn btn-primary" id="btnAddFixa">+ Adicionar</button>
+    <button class="btn" id="btnCancelarEdicaoFixa" style="display:none">Cancelar</button>
   </div>
   <div class="hint" id="fxStatus"></div>
   <div class="hint">Não achou a despesa na lista? Cadastre em 🗂️ Cadastros.</div>
+
+  <div class="form-row">
+    <div class="field"><label>Categoria</label><select id="fxFiltroCategoria"><option value="">Todas</option></select></div>
+    <div class="field"><label>Status</label>
+      <select id="fxFiltroStatus">
+        <option value="ativas">Ativas</option>
+        <option value="todas">Todas</option>
+        <option value="inativas">Inativas / Encerradas</option>
+      </select>
+    </div>
+  </div>
 
   <table>
     <thead><tr><th>Tipo</th><th>Descrição</th><th>Categoria</th><th class="num">Valor</th><th>Vencimento</th><th>Prazo</th><th>Observações</th><th></th></tr></thead>
@@ -214,8 +229,20 @@
   </div>
   <div class="cards" id="cardsContasMes"></div>
 
+  <div class="form-row">
+    <div class="field"><label>Categoria</label><select id="cmFiltroCategoria"><option value="">Todas</option></select></div>
+    <div class="field"><label>Status</label>
+      <select id="cmFiltroStatus">
+        <option value="">Todos</option>
+        <option value="atrasada">Atrasada</option>
+        <option value="pendente">Pendente</option>
+        <option value="paga">Paga</option>
+      </select>
+    </div>
+  </div>
+
   <table>
-    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Provisão</th><th>Status</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
+    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Provisão</th><th>Status</th><th>Parcelas</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
     <tbody id="cmChecklistTbody"></tbody>
   </table>
 </div>
@@ -238,6 +265,20 @@
   </div>
   <div class="hint" id="ddStatus"></div>
 
+  <div class="form-row">
+    <div class="field"><label>De</label><input type="date" id="ddFiltroDataDe"></div>
+    <div class="field"><label>Até</label><input type="date" id="ddFiltroDataAte"></div>
+    <div class="field"><label>Categoria</label><select id="ddFiltroCategoria"><option value="">Todas</option></select></div>
+    <div class="field"><label>Pagamento</label>
+      <select id="ddFiltroForma">
+        <option value="">Todos</option>
+        <option value="Debito">Débito</option>
+        <option value="Credito">Crédito</option>
+      </select>
+    </div>
+    <button class="btn" id="btnLimparFiltroDiarias">Limpar filtros</button>
+  </div>
+
   <table>
     <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th>Pagamento</th><th class="num">Valor</th><th>Parcelas</th><th>Observações</th><th></th></tr></thead>
     <tbody id="ddTbody"></tbody>
@@ -249,6 +290,10 @@
 <div id="viewCartao" class="view">
   <div class="subtitle" style="margin-bottom:14px">Gerado automaticamente a partir dos lançamentos de "Despesas Diárias" pagos no Crédito.</div>
   <div class="cards" id="cardsCartao"></div>
+
+  <div class="form-row">
+    <div class="field"><label>Categoria</label><select id="ccFiltroCategoria"><option value="">Todas</option></select></div>
+  </div>
 
   <div class="section-title">Compras parceladas</div>
   <table>
@@ -269,6 +314,9 @@
 <!-- ================= PREVISAO ================= -->
 <div id="viewPrevisao" class="view">
   <div class="subtitle" style="margin-bottom:14px">Projeção das despesas fixas para os próximos 12 meses (assume o mesmo valor todo mês).</div>
+  <div class="form-row">
+    <div class="field"><label>Categoria</label><select id="pvFiltroCategoria"><option value="">Todas</option></select></div>
+  </div>
   <div class="matrix-wrap">
     <table>
       <thead><tr id="pvMatrixHead"><th>Tipo de Despesa</th></tr></thead>
@@ -314,6 +362,7 @@
   let fixasPagamentos = [];
   let despesasCatalogo = [];
   let realtimeReady = false;
+  let editingFixaId = null;
 
   const fmtBRL = (v) => (Number(v) || 0).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
   const fmtDate = (iso) => { if (!iso) return ''; const [y,m,d] = iso.split('-'); return `${d}/${m}/${y}`; };
@@ -338,13 +387,24 @@
   }
 
   function prazoInfo(r, mesStr) {
-    if (!r.parcelas_total || !r.parcelas_mes_inicio) return { ativa: true, label: 'Sem prazo', parcelaNum: null };
-    const [iy, im] = r.parcelas_mes_inicio.slice(0, 7).split('-').map(Number);
+    if (r.ativo === false) return { ativa: false, label: 'Inativa', parcelaNum: null };
+
     const [my, mm] = mesStr.split('-').map(Number);
-    const idx = (my - iy) * 12 + (mm - im);
-    const ativa = idx >= 0 && idx < r.parcelas_total;
-    const parcelaNum = idx + 1;
-    return { ativa, label: ativa ? `Parcela ${parcelaNum}/${r.parcelas_total}` : 'Encerrada', parcelaNum };
+    if (r.data_final) {
+      const [fy, fm] = r.data_final.slice(0, 7).split('-').map(Number);
+      if (my > fy || (my === fy && mm > fm)) return { ativa: false, label: 'Encerrada (data final)', parcelaNum: null };
+    }
+
+    if (r.parcelas_total && r.parcelas_mes_inicio) {
+      const [iy, im] = r.parcelas_mes_inicio.slice(0, 7).split('-').map(Number);
+      const idx = (my - iy) * 12 + (mm - im);
+      const ativa = idx >= 0 && idx < r.parcelas_total;
+      const parcelaNum = idx + 1;
+      return { ativa, label: ativa ? `Parcela ${parcelaNum}/${r.parcelas_total}` : 'Encerrada', parcelaNum };
+    }
+
+    if (r.data_final) return { ativa: true, label: `Até ${fmtDate(r.data_final)}`, parcelaNum: null };
+    return { ativa: true, label: 'Sem prazo', parcelaNum: null };
   }
 
   // ---------------- AUTH ----------------
@@ -481,10 +541,19 @@
   // ---------------- CATEGORIAS (cadastro para seleção) ----------------
   function renderCategoriaOptions() {
     const ordered = [...categorias].sort((a, b) => a.nome.localeCompare(b.nome));
+    const optionsHtml = ordered.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
+
     ['catDespCategoria', 'ddCategoria'].forEach(id => {
       const sel = document.getElementById(id);
       const prev = sel.value;
-      sel.innerHTML = '<option value="">Selecione...</option>' + ordered.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
+      sel.innerHTML = '<option value="">Selecione...</option>' + optionsHtml;
+      if (ordered.some(c => c.nome === prev)) sel.value = prev;
+    });
+
+    ['fxFiltroCategoria', 'cmFiltroCategoria', 'ddFiltroCategoria', 'ccFiltroCategoria', 'pvFiltroCategoria', 'dashFiltroCategoria'].forEach(id => {
+      const sel = document.getElementById(id);
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Todas</option>' + optionsHtml;
       if (ordered.some(c => c.nome === prev)) sel.value = prev;
     });
 
@@ -562,13 +631,23 @@
   // ---------------- DESPESAS FIXAS ----------------
   function renderFixas() {
     const mesRef = currentMonthStr();
+    const filtroCategoria = document.getElementById('fxFiltroCategoria').value;
+    const filtroStatus = document.getElementById('fxFiltroStatus').value;
     const tbody = document.getElementById('fxTbody');
-    if (!despesasFixas.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhuma despesa fixa cadastrada.</td></tr>';
+
+    const linhas = despesasFixas
+      .map(r => ({ r, prazo: prazoInfo(r, mesRef) }))
+      .filter(({ r, prazo }) => {
+        if (filtroCategoria && r.categoria !== filtroCategoria) return false;
+        if (filtroStatus === 'ativas' && !prazo.ativa) return false;
+        if (filtroStatus === 'inativas' && prazo.ativa) return false;
+        return true;
+      });
+
+    if (!linhas.length) {
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhuma despesa fixa encontrada.</td></tr>';
     } else {
-      tbody.innerHTML = despesasFixas.map(r => {
-        const prazo = prazoInfo(r, mesRef);
-        return `
+      tbody.innerHTML = linhas.map(({ r, prazo }) => `
         <tr data-id="${r.id}" class="${prazo.ativa ? '' : 'encerrada'}">
           <td>${r.tipo || ''}</td>
           <td class="desc-col">${r.descricao || ''}</td>
@@ -577,9 +656,12 @@
           <td>${r.dia_vencimento ? 'Dia ' + r.dia_vencimento : ''}</td>
           <td>${prazo.label}</td>
           <td class="desc-col">${r.observacoes || ''}</td>
-          <td><button class="btn-icon btn-del-fixa" title="Excluir">🗑️</button></td>
-        </tr>`;
-      }).join('');
+          <td>
+            <button class="btn-icon btn-edit-fixa" title="Editar">✏️</button>
+            <button class="btn-icon btn-toggle-ativo-fixa" title="${r.ativo === false ? 'Reativar' : 'Inativar'}">${r.ativo === false ? '▶️' : '⏸️'}</button>
+            <button class="btn-icon btn-del-fixa" title="Excluir">🗑️</button>
+          </td>
+        </tr>`).join('');
     }
     const ativas = despesasFixas.filter(r => prazoInfo(r, mesRef).ativa);
     const total = ativas.reduce((s, r) => s + Number(r.valor || 0), 0);
@@ -589,6 +671,20 @@
       <div class="card"><div class="label">Qtd. Despesas Ativas</div><div class="value">${ativas.length}</div></div>`;
   }
 
+  document.getElementById('fxFiltroCategoria').addEventListener('change', renderFixas);
+  document.getElementById('fxFiltroStatus').addEventListener('change', renderFixas);
+
+  function resetFormFixa() {
+    ['fxDescricao','fxValor','fxDia','fxObs','fxParcelasRestantes','fxDataFinal'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fxTipoCatalogo').value = '';
+    document.getElementById('fxCategoriaPreview').textContent = '';
+    editingFixaId = null;
+    document.getElementById('btnAddFixa').textContent = '+ Adicionar';
+    document.getElementById('btnCancelarEdicaoFixa').style.display = 'none';
+  }
+
+  document.getElementById('btnCancelarEdicaoFixa').addEventListener('click', resetFormFixa);
+
   document.getElementById('btnAddFixa').addEventListener('click', async () => {
     const tipo = document.getElementById('fxTipoCatalogo').value;
     const valor = parseFloat(document.getElementById('fxValor').value);
@@ -597,6 +693,14 @@
     const catalogItem = despesasCatalogo.find(c => c.nome === tipo);
     const parcelasInput = document.getElementById('fxParcelasRestantes').value;
     const parcelasTotal = parcelasInput ? parseInt(parcelasInput) : null;
+    const dataFinalInput = document.getElementById('fxDataFinal').value;
+
+    let parcelasMesInicio = null;
+    if (parcelasTotal) {
+      const original = editingFixaId ? despesasFixas.find(f => f.id === editingFixaId) : null;
+      parcelasMesInicio = (original && original.parcelas_total) ? original.parcelas_mes_inicio : `${currentMonthStr()}-01`;
+    }
+
     const row = {
       tipo,
       descricao: document.getElementById('fxDescricao').value.trim() || null,
@@ -605,27 +709,58 @@
       dia_vencimento: parseInt(document.getElementById('fxDia').value) || null,
       observacoes: document.getElementById('fxObs').value.trim() || null,
       parcelas_total: parcelasTotal,
-      parcelas_mes_inicio: parcelasTotal ? `${currentMonthStr()}-01` : null
+      parcelas_mes_inicio: parcelasMesInicio,
+      data_final: dataFinalInput ? `${dataFinalInput}-01` : null
     };
     const btnFx = document.getElementById('btnAddFixa');
     btnFx.disabled = true; btnFx.textContent = 'Salvando...';
-    const { data, error } = await withTimeout(sb.from('pf_despesas_fixas').insert([row]).select());
-    btnFx.disabled = false; btnFx.textContent = '+ Adicionar';
-    if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
+    const result = editingFixaId
+      ? await withTimeout(sb.from('pf_despesas_fixas').update(row).eq('id', editingFixaId).select())
+      : await withTimeout(sb.from('pf_despesas_fixas').insert([row]).select());
+    const { data, error } = result;
+    btnFx.disabled = false;
+    if (error) { btnFx.textContent = editingFixaId ? 'Salvar Alterações' : '+ Adicionar'; statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
     despesasFixas = despesasFixas.filter(r => r.id !== data[0].id); despesasFixas.push(data[0]);
-    ['fxDescricao','fxValor','fxDia','fxObs','fxParcelasRestantes'].forEach(id => document.getElementById(id).value = '');
-    document.getElementById('fxTipoCatalogo').value = '';
-    document.getElementById('fxCategoriaPreview').textContent = '';
+    resetFormFixa();
     statusEl.textContent = ''; renderAll();
   });
 
   document.getElementById('fxTbody').addEventListener('click', async (e) => {
-    if (!e.target.classList.contains('btn-del-fixa')) return;
-    const id = e.target.closest('tr').dataset.id;
-    if (!confirm('Excluir esta despesa fixa?')) return;
-    const { error } = await withTimeout(sb.from('pf_despesas_fixas').delete().eq('id', id));
-    if (error) { alert(error.message); return; }
-    despesasFixas = despesasFixas.filter(r => String(r.id) !== id); renderAll();
+    if (e.target.classList.contains('btn-edit-fixa')) {
+      const id = parseInt(e.target.closest('tr').dataset.id);
+      const r = despesasFixas.find(f => f.id === id);
+      if (!r) return;
+      editingFixaId = id;
+      document.getElementById('fxTipoCatalogo').value = r.tipo;
+      document.getElementById('fxCategoriaPreview').textContent = r.categoria ? ('Categoria: ' + r.categoria) : '';
+      document.getElementById('fxDescricao').value = r.descricao || '';
+      document.getElementById('fxValor').value = r.valor;
+      document.getElementById('fxDia').value = r.dia_vencimento || '';
+      document.getElementById('fxParcelasRestantes').value = r.parcelas_total || '';
+      document.getElementById('fxDataFinal').value = r.data_final ? r.data_final.slice(0, 7) : '';
+      document.getElementById('fxObs').value = r.observacoes || '';
+      document.getElementById('btnAddFixa').textContent = 'Salvar Alterações';
+      document.getElementById('btnCancelarEdicaoFixa').style.display = 'inline-block';
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+      return;
+    }
+    if (e.target.classList.contains('btn-toggle-ativo-fixa')) {
+      const id = e.target.closest('tr').dataset.id;
+      const r = despesasFixas.find(f => String(f.id) === id);
+      const novoAtivo = r.ativo === false;
+      const { data, error } = await withTimeout(sb.from('pf_despesas_fixas').update({ ativo: novoAtivo }).eq('id', id).select());
+      if (error) { alert(error.message); return; }
+      despesasFixas = despesasFixas.filter(f => String(f.id) !== id); despesasFixas.push(data[0]);
+      renderAll();
+      return;
+    }
+    if (e.target.classList.contains('btn-del-fixa')) {
+      const id = e.target.closest('tr').dataset.id;
+      if (!confirm('Excluir esta despesa fixa?')) return;
+      const { error } = await withTimeout(sb.from('pf_despesas_fixas').delete().eq('id', id));
+      if (error) { alert(error.message); return; }
+      despesasFixas = despesasFixas.filter(r => String(r.id) !== id); renderAll();
+    }
   });
 
   // ---------------- DESPESAS DIARIAS ----------------
@@ -635,9 +770,19 @@
 
   function renderDiarias() {
     const tbody = document.getElementById('ddTbody');
-    const rows = [...despesasDiarias].sort((a,b) => (b.data || '').localeCompare(a.data || ''));
+    const filtroDe = document.getElementById('ddFiltroDataDe').value;
+    const filtroAte = document.getElementById('ddFiltroDataAte').value;
+    const filtroCategoria = document.getElementById('ddFiltroCategoria').value;
+    const filtroForma = document.getElementById('ddFiltroForma').value;
+    const rows = despesasDiarias.filter(r => {
+      if (filtroDe && r.data < filtroDe) return false;
+      if (filtroAte && r.data > filtroAte) return false;
+      if (filtroCategoria && r.categoria !== filtroCategoria) return false;
+      if (filtroForma && r.forma_pagamento !== filtroForma) return false;
+      return true;
+    }).sort((a,b) => (b.data || '').localeCompare(a.data || ''));
     if (!rows.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhum lançamento ainda.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhum lançamento encontrado.</td></tr>';
     } else {
       tbody.innerHTML = rows.map(r => `
         <tr data-id="${r.id}">
@@ -697,6 +842,17 @@
     despesasDiarias = despesasDiarias.filter(r => String(r.id) !== id); renderAll();
   });
 
+  ['ddFiltroDataDe','ddFiltroDataAte','ddFiltroCategoria','ddFiltroForma'].forEach(id => {
+    document.getElementById(id).addEventListener('change', renderDiarias);
+  });
+  document.getElementById('btnLimparFiltroDiarias').addEventListener('click', () => {
+    document.getElementById('ddFiltroDataDe').value = '';
+    document.getElementById('ddFiltroDataAte').value = '';
+    document.getElementById('ddFiltroCategoria').value = '';
+    document.getElementById('ddFiltroForma').value = '';
+    renderDiarias();
+  });
+
   // ---------------- CARTAO DE CREDITO (derivado) ----------------
   function creditoCompras() {
     return despesasDiarias
@@ -716,7 +872,8 @@
   }
 
   function renderCartao() {
-    const compras = creditoCompras();
+    const filtroCategoria = document.getElementById('ccFiltroCategoria').value;
+    const compras = creditoCompras().filter(r => !filtroCategoria || r.categoria === filtroCategoria);
     const tbody = document.getElementById('ccTbody');
     if (!compras.length) {
       tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma compra no crédito lançada.</td></tr>';
@@ -768,14 +925,19 @@
       <div class="card"><div class="label">Compras Ativas</div><div class="value">${compras.filter(r => r.parcelaAtual <= r.parcelas).length}</div></div>`;
   }
 
+  document.getElementById('ccFiltroCategoria').addEventListener('change', renderCartao);
+
   // ---------------- PREVISAO (derivado) ----------------
   function renderPrevisao() {
+    const filtroCategoria = document.getElementById('pvFiltroCategoria').value;
     const months = nextMonths(12);
     const head = document.getElementById('pvMatrixHead');
     head.innerHTML = '<th>Tipo de Despesa</th>' + months.map(m => `<th class="num">${monthLabel(m)}</th>`).join('') + '<th class="num">Total Anual</th>';
 
     const body = document.getElementById('pvMatrixBody');
-    const relevantes = despesasFixas.filter(r => months.some(m => prazoInfo(r, monthStrOf(m)).ativa));
+    const relevantes = despesasFixas
+      .filter(r => !filtroCategoria || r.categoria === filtroCategoria)
+      .filter(r => months.some(m => prazoInfo(r, monthStrOf(m)).ativa));
     if (!relevantes.length) {
       body.innerHTML = `<tr><td colspan="${months.length + 2}" class="empty-msg">Cadastre despesas fixas para ver a previsão.</td></tr>`;
     } else {
@@ -791,17 +953,20 @@
       }).join('');
     }
 
+    const baseFixas = despesasFixas.filter(r => !filtroCategoria || r.categoria === filtroCategoria);
     const totalsRow = months.map(m => {
       const mesStr = monthStrOf(m);
-      const total = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa).reduce((s, r) => s + Number(r.valor || 0), 0);
+      const total = baseFixas.filter(r => prazoInfo(r, mesStr).ativa).reduce((s, r) => s + Number(r.valor || 0), 0);
       return `<td class="num">${fmtBRL(total)}</td>`;
     }).join('');
     const grandTotal = months.reduce((sum, m) => {
       const mesStr = monthStrOf(m);
-      return sum + despesasFixas.filter(r => prazoInfo(r, mesStr).ativa).reduce((s, r) => s + Number(r.valor || 0), 0);
+      return sum + baseFixas.filter(r => prazoInfo(r, mesStr).ativa).reduce((s, r) => s + Number(r.valor || 0), 0);
     }, 0);
     document.getElementById('pvMatrixTotal').innerHTML = '<td>TOTAL MENSAL</td>' + totalsRow + `<td class="num">${fmtBRL(grandTotal)}</td>`;
   }
+
+  document.getElementById('pvFiltroCategoria').addEventListener('change', renderPrevisao);
 
   // ---------------- STATUS DE PAGAMENTO DAS FIXAS ----------------
   function pagamentoDoMes(despesaFixaId, mesStr) {
@@ -819,30 +984,37 @@
 
   function renderChecklistFixas() {
     const mesStr = document.getElementById('cmMes').value || currentMonthStr();
+    const filtroCategoria = document.getElementById('cmFiltroCategoria').value;
+    const filtroStatus = document.getElementById('cmFiltroStatus').value;
     const tbody = document.getElementById('cmChecklistTbody');
     const ativas = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa);
 
-    const linhas = ativas.map(r => {
+    let linhas = ativas.map(r => {
       const pag = pagamentoDoMes(r.id, mesStr);
       const pago = !!pag;
       const status = statusFixaNoMes(r, mesStr, pago);
       return { r, pag, pago, status };
     }).sort((a, b) => STATUS_ORDER[a.status.statusClass] - STATUS_ORDER[b.status.statusClass]);
 
+    if (filtroCategoria) linhas = linhas.filter(l => l.r.categoria === filtroCategoria);
+    if (filtroStatus) linhas = linhas.filter(l => l.status.statusClass === filtroStatus);
+
     if (!linhas.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma despesa fixa ativa neste mês.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhuma despesa fixa encontrada para este filtro.</td></tr>';
     } else {
       tbody.innerHTML = linhas.map(({ r, pag, pago, status }) => {
         const valorRealCell = pago
           ? fmtBRL(pag.valor_real ?? r.valor)
           : `<input type="number" step="0.01" class="pay-valor-input" value="${r.valor}" style="width:100px">`;
         const rowClass = status.statusClass === 'atrasada' ? 'row-atrasada' : (status.statusClass === 'paga' ? 'row-paga' : '');
+        const parcelasLabel = prazoInfo(r, mesStr).parcelaNum ? `${prazoInfo(r, mesStr).parcelaNum}/${r.parcelas_total}` : '-';
         return `
           <tr data-fixa-id="${r.id}" class="${rowClass}">
             <td>${r.tipo || ''}</td>
             <td>${r.categoria || ''}</td>
             <td class="num">${fmtBRL(r.valor)}</td>
             <td><span class="status-badge ${status.statusClass}">${status.statusLabel}</span></td>
+            <td>${parcelasLabel}</td>
             <td class="num">${valorRealCell}</td>
             <td>${pago ? fmtDate(pag.data_pagamento) : `<input type="date" class="pay-date-input" value="${todayISO()}">`}</td>
             <td><button class="btn btn-toggle-pago" data-pago="${pago}">${pago ? 'Desmarcar' : 'Marcar como paga'}</button></td>
@@ -851,7 +1023,7 @@
     }
 
     const pagas = linhas.filter(l => l.pago);
-    const totalProvisionado = ativas.reduce((s, r) => s + Number(r.valor || 0), 0);
+    const totalProvisionado = linhas.reduce((s, { r }) => s + Number(r.valor || 0), 0);
     const totalConfirmado = pagas.reduce((s, { pag, r }) => s + Number(pag.valor_real ?? r.valor), 0);
     const provisaoDasPagas = pagas.reduce((s, { r }) => s + Number(r.valor || 0), 0);
     const diferenca = totalConfirmado - provisaoDasPagas;
@@ -865,6 +1037,8 @@
   }
 
   document.getElementById('cmMes').addEventListener('change', renderChecklistFixas);
+  document.getElementById('cmFiltroCategoria').addEventListener('change', renderChecklistFixas);
+  document.getElementById('cmFiltroStatus').addEventListener('change', renderChecklistFixas);
 
   document.getElementById('cmChecklistTbody').addEventListener('click', async (e) => {
     if (!e.target.classList.contains('btn-toggle-pago')) return;
@@ -923,15 +1097,16 @@
   // ---------------- DASHBOARD ----------------
   function renderDashboard() {
     const mesStr = document.getElementById('dashMes').value || currentMonthStr();
-    const doMes = despesasDiarias.filter(r => (r.data || '').slice(0, 7) === mesStr);
+    const filtroCategoria = document.getElementById('dashFiltroCategoria').value;
+    const doMes = despesasDiarias.filter(r => (r.data || '').slice(0, 7) === mesStr && (!filtroCategoria || r.categoria === filtroCategoria));
     const totalMes = doMes.reduce((s, r) => s + Number(r.valor || 0), 0);
 
-    const ativasNoMes = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa);
+    const ativasNoMes = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa && (!filtroCategoria || r.categoria === filtroCategoria));
     const fixasPendentes = ativasNoMes.filter(r => !pagamentoDoMes(r.id, mesStr));
     const valorPendente = fixasPendentes.reduce((s, r) => s + Number(r.valor || 0), 0);
     const atrasadas = fixasPendentes.filter(r => statusFixaNoMes(r, mesStr, false).statusClass === 'atrasada');
 
-    const compras = creditoCompras();
+    const compras = creditoCompras().filter(r => !filtroCategoria || r.categoria === filtroCategoria);
     const faturaAtual = compras.reduce((s, r) => s + (r.parcelaAtual <= r.parcelas ? r.valorParcela : 0), 0);
 
     document.getElementById('cardsDashboard').innerHTML = `
@@ -955,11 +1130,15 @@
           </div>`).join('')
       : '<div class="empty-msg">Sem lançamentos neste mês.</div>';
 
-    const ultimos = [...despesasDiarias].sort((a, b) => (b.data || '').localeCompare(a.data || '')).slice(0, 8);
+    const ultimos = despesasDiarias
+      .filter(r => !filtroCategoria || r.categoria === filtroCategoria)
+      .sort((a, b) => (b.data || '').localeCompare(a.data || '')).slice(0, 8);
     document.getElementById('dashUltimos').innerHTML = ultimos.length
       ? ultimos.map(r => `<tr><td>${fmtDate(r.data)}</td><td class="desc-col">${r.descricao || ''}</td><td class="num">${fmtBRL(r.valor)}</td></tr>`).join('')
       : '<tr><td colspan="3" class="empty-msg">Sem lançamentos ainda.</td></tr>';
   }
+
+  document.getElementById('dashFiltroCategoria').addEventListener('change', renderDashboard);
 
   document.getElementById('dashMes').addEventListener('change', renderDashboard);
 
