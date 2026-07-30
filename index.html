@@ -1171,10 +1171,13 @@
           valorRealCell = fmtBRL(pag.valor_real ?? r.valor);
           dataCell = fmtDate(pag.data_pagamento);
           acaoCell = `<button class="btn btn-toggle-pago" data-pago="true">Desmarcar</button>`;
-          formaCell = `<span class="badge ${pag.forma_pagamento === 'Credito' ? 'credito' : 'debito'}">${pag.forma_pagamento === 'Credito' ? 'Crédito' : 'Débito'}</span>`;
+          const cartaoPago = pag.cartao_id ? cartoes.find(c => c.id === pag.cartao_id) : null;
+          formaCell = `<span class="badge ${pag.forma_pagamento === 'Credito' ? 'credito' : 'debito'}">${pag.forma_pagamento === 'Credito' ? 'Crédito' : 'Débito'}</span>${cartaoPago ? '<br><span class="hint">' + cartaoPago.nome + '</span>' : ''}`;
         } else {
           const formaCredito = pag && pag.forma_pagamento === 'Credito';
-          formaCell = `<select class="pay-forma-input"><option value="Debito"${formaCredito ? '' : ' selected'}>Débito</option><option value="Credito"${formaCredito ? ' selected' : ''}>Crédito</option></select>`;
+          const cartaoOptions = cartoes.map(c => `<option value="${c.id}"${pag && pag.cartao_id === c.id ? ' selected' : ''}>${c.nome}</option>`).join('');
+          formaCell = `<select class="pay-forma-input"><option value="Debito"${formaCredito ? '' : ' selected'}>Débito</option><option value="Credito"${formaCredito ? ' selected' : ''}>Crédito</option></select>
+            <select class="pay-cartao-input" style="display:${formaCredito ? 'block' : 'none'}; margin-top:4px"><option value="">Sem cartão</option>${cartaoOptions}</select>`;
           if (status.statusClass === 'confirmada') {
             valorRealCell = fmtBRL(pag.valor_real);
             dataCell = `<input type="date" class="pay-date-input" value="${todayISO()}">`;
@@ -1224,6 +1227,13 @@
   document.getElementById('cmFiltroCategoria').addEventListener('change', renderChecklistFixas);
   document.getElementById('cmFiltroStatus').addEventListener('change', renderChecklistFixas);
 
+  document.getElementById('cmChecklistTbody').addEventListener('change', (e) => {
+    if (!e.target.classList.contains('pay-forma-input')) return;
+    const tr = e.target.closest('tr');
+    const cartaoSel = tr.querySelector('.pay-cartao-input');
+    if (cartaoSel) cartaoSel.style.display = e.target.value === 'Credito' ? 'block' : 'none';
+  });
+
   document.getElementById('cmChecklistTbody').addEventListener('click', async (e) => {
     const tr = e.target.closest('tr');
     if (!tr) return;
@@ -1236,9 +1246,10 @@
       const valorReal = valorRealInput !== '' ? parseFloat(valorRealInput) : fixa.valor;
       if (isNaN(valorReal)) { alert('Informe um valor válido.'); return; }
       const formaPagamento = tr.querySelector('.pay-forma-input').value;
+      const cartaoId = formaPagamento === 'Credito' ? (parseInt(tr.querySelector('.pay-cartao-input').value) || null) : null;
       const btn = e.target; btn.disabled = true; const original = btn.textContent; btn.textContent = 'Salvando...';
       const { data, error } = await withTimeout(sb.from('pf_fixas_pagamentos').insert([{
-        despesa_fixa_id: fixaId, mes_referencia: `${mesStr}-01`, valor_real: valorReal, forma_pagamento: formaPagamento
+        despesa_fixa_id: fixaId, mes_referencia: `${mesStr}-01`, valor_real: valorReal, forma_pagamento: formaPagamento, cartao_id: cartaoId
       }]).select());
       btn.disabled = false; btn.textContent = original;
       if (error) { alert(error.message); return; }
@@ -1272,6 +1283,7 @@
       const valorReal = existingPag ? Number(existingPag.valor_real) : (valorRealInput && valorRealInput.value !== '' ? parseFloat(valorRealInput.value) : fixa.valor);
       if (isNaN(valorReal)) { alert('Informe um valor real válido.'); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       const formaPagamento = tr.querySelector('.pay-forma-input').value;
+      const cartaoId = formaPagamento === 'Credito' ? (parseInt(tr.querySelector('.pay-cartao-input').value) || null) : null;
       const { data: diariaInserted, error: errDiaria } = await withTimeout(sb.from('pf_despesas_diarias').insert([{
         data: isoData,
         descricao: fixa.tipo + (fixa.descricao ? ' - ' + fixa.descricao : ''),
@@ -1279,6 +1291,7 @@
         forma_pagamento: formaPagamento,
         valor: valorReal,
         parcelas: null,
+        cartao_id: cartaoId,
         observacoes: 'Baixa automática de despesa fixa'
       }]).select());
       if (errDiaria) { alert(errDiaria.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
@@ -1286,7 +1299,7 @@
 
       if (existingPag) {
         const { data: pagUpdated, error: errPag } = await withTimeout(sb.from('pf_fixas_pagamentos').update({
-          data_pagamento: isoData, valor_real: valorReal, forma_pagamento: formaPagamento, despesa_diaria_id: diariaInserted[0].id
+          data_pagamento: isoData, valor_real: valorReal, forma_pagamento: formaPagamento, cartao_id: cartaoId, despesa_diaria_id: diariaInserted[0].id
         }).eq('id', existingPag.id).select());
         if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
         fixasPagamentos = fixasPagamentos.filter(p => p.id !== existingPag.id); fixasPagamentos.push(pagUpdated[0]);
@@ -1297,6 +1310,7 @@
           data_pagamento: isoData,
           valor_real: valorReal,
           forma_pagamento: formaPagamento,
+          cartao_id: cartaoId,
           despesa_diaria_id: diariaInserted[0].id
         }]).select());
         if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
