@@ -105,8 +105,10 @@
   .status-badge { display: inline-block; padding: 3px 10px; border-radius: 999px; font-size: 12px; font-weight: 600; }
   .status-badge.atrasada { background: #fee2e2; color: #dc2626; }
   .status-badge.pendente { background: #f1f2f4; color: var(--muted); }
+  .status-badge.confirmada { background: #e0e7ff; color: #4338ca; }
   .status-badge.paga { background: #dcfce7; color: #16a34a; }
   tr.row-atrasada { background: #fef7f7; }
+  tr.row-confirmada { background: #f6f7ff; }
   tr.row-paga { background: #f6fdf9; }
   .month-picker { display: flex; align-items: center; gap: 8px; margin-bottom: 14px; }
   .month-picker input { padding: 8px 10px; border: 1px solid var(--border); border-radius: 8px; font-size: 13px; }
@@ -237,13 +239,14 @@
         <option value="">Todos</option>
         <option value="atrasada">Atrasada</option>
         <option value="pendente">Pendente</option>
+        <option value="confirmada">Confirmada</option>
         <option value="paga">Paga</option>
       </select>
     </div>
   </div>
 
   <table>
-    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Provisão</th><th>Status</th><th>Parcelas</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
+    <thead><tr><th>Tipo</th><th>Categoria</th><th class="num">Provisão</th><th>Vencimento</th><th>Status</th><th>Parcelas</th><th class="num">Valor Real</th><th>Data Pagamento</th><th></th></tr></thead>
     <tbody id="cmChecklistTbody"></tbody>
   </table>
 </div>
@@ -978,14 +981,16 @@
     return fixasPagamentos.find(p => p.despesa_fixa_id === despesaFixaId && p.mes_referencia.slice(0, 7) === mesStr);
   }
 
-  function statusFixaNoMes(r, mesStr, pago) {
-    if (pago) return { statusClass: 'paga', statusLabel: '✔ Paga' };
+  function statusFixaNoMes(r, mesStr, pag) {
+    if (pag && pag.data_pagamento) return { statusClass: 'paga', statusLabel: '✔ Paga' };
     const todayMonthStr = currentMonthStr();
     const atrasada = mesStr < todayMonthStr || (mesStr === todayMonthStr && r.dia_vencimento && new Date().getDate() > r.dia_vencimento);
-    return atrasada ? { statusClass: 'atrasada', statusLabel: '⚠ Atrasada' } : { statusClass: 'pendente', statusLabel: '● Pendente' };
+    if (atrasada) return { statusClass: 'atrasada', statusLabel: '⚠ Atrasada' };
+    if (pag && pag.valor_real != null) return { statusClass: 'confirmada', statusLabel: '📋 Confirmada' };
+    return { statusClass: 'pendente', statusLabel: '● Pendente' };
   }
 
-  const STATUS_ORDER = { atrasada: 0, pendente: 1, paga: 2 };
+  const STATUS_ORDER = { atrasada: 0, pendente: 1, confirmada: 2, paga: 3 };
 
   function renderChecklistFixas() {
     const mesStr = document.getElementById('cmMes').value || currentMonthStr();
@@ -996,42 +1001,55 @@
 
     let linhas = ativas.map(r => {
       const pag = pagamentoDoMes(r.id, mesStr);
-      const pago = !!pag;
-      const status = statusFixaNoMes(r, mesStr, pago);
-      return { r, pag, pago, status };
+      const status = statusFixaNoMes(r, mesStr, pag);
+      return { r, pag, status };
     }).sort((a, b) => STATUS_ORDER[a.status.statusClass] - STATUS_ORDER[b.status.statusClass]);
 
     if (filtroCategoria) linhas = linhas.filter(l => l.r.categoria === filtroCategoria);
     if (filtroStatus) linhas = linhas.filter(l => l.status.statusClass === filtroStatus);
 
     if (!linhas.length) {
-      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhuma despesa fixa encontrada para este filtro.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="9" class="empty-msg">Nenhuma despesa fixa encontrada para este filtro.</td></tr>';
     } else {
-      tbody.innerHTML = linhas.map(({ r, pag, pago, status }) => {
-        const valorRealCell = pago
-          ? fmtBRL(pag.valor_real ?? r.valor)
-          : `<input type="number" step="0.01" class="pay-valor-input" value="${r.valor}" style="width:100px">`;
-        const rowClass = status.statusClass === 'atrasada' ? 'row-atrasada' : (status.statusClass === 'paga' ? 'row-paga' : '');
+      tbody.innerHTML = linhas.map(({ r, pag, status }) => {
+        const rowClass = status.statusClass === 'atrasada' ? 'row-atrasada' : (status.statusClass === 'paga' ? 'row-paga' : (status.statusClass === 'confirmada' ? 'row-confirmada' : ''));
         const parcelasLabel = prazoInfo(r, mesStr).parcelaNum ? `${prazoInfo(r, mesStr).parcelaNum}/${r.parcelas_total}` : '-';
+
+        let valorRealCell, dataCell, acaoCell;
+        if (status.statusClass === 'paga') {
+          valorRealCell = fmtBRL(pag.valor_real ?? r.valor);
+          dataCell = fmtDate(pag.data_pagamento);
+          acaoCell = `<button class="btn btn-toggle-pago" data-pago="true">Desmarcar</button>`;
+        } else if (status.statusClass === 'confirmada') {
+          valorRealCell = fmtBRL(pag.valor_real);
+          dataCell = `<input type="date" class="pay-date-input" value="${todayISO()}">`;
+          acaoCell = `<button class="btn btn-toggle-pago" data-pago="false">Marcar como paga</button> <button class="btn-icon btn-remove-confirmacao" title="Remover confirmação">↩️</button>`;
+        } else {
+          valorRealCell = `<input type="number" step="0.01" class="pay-valor-input" value="${r.valor}" style="width:100px">`;
+          dataCell = `<input type="date" class="pay-date-input" value="${todayISO()}">`;
+          acaoCell = `<button class="btn btn-confirmar-valor">Confirmar valor</button> <button class="btn btn-toggle-pago" data-pago="false">Marcar como paga</button>`;
+        }
+
         return `
           <tr data-fixa-id="${r.id}" class="${rowClass}">
             <td>${r.tipo || ''}</td>
             <td>${r.categoria || ''}</td>
             <td class="num">${fmtBRL(r.valor)}</td>
+            <td>${r.dia_vencimento ? 'Dia ' + r.dia_vencimento : '-'}</td>
             <td><span class="status-badge ${status.statusClass}">${status.statusLabel}</span></td>
             <td>${parcelasLabel}</td>
             <td class="num">${valorRealCell}</td>
-            <td>${pago ? fmtDate(pag.data_pagamento) : `<input type="date" class="pay-date-input" value="${todayISO()}">`}</td>
-            <td><button class="btn btn-toggle-pago" data-pago="${pago}">${pago ? 'Desmarcar' : 'Marcar como paga'}</button></td>
+            <td>${dataCell}</td>
+            <td>${acaoCell}</td>
           </tr>`;
       }).join('');
     }
 
-    const pagas = linhas.filter(l => l.pago);
+    const comValorReal = linhas.filter(l => l.pag && l.pag.valor_real != null);
     const totalProvisionado = linhas.reduce((s, { r }) => s + Number(r.valor || 0), 0);
-    const totalConfirmado = pagas.reduce((s, { pag, r }) => s + Number(pag.valor_real ?? r.valor), 0);
-    const provisaoDasPagas = pagas.reduce((s, { r }) => s + Number(r.valor || 0), 0);
-    const diferenca = totalConfirmado - provisaoDasPagas;
+    const totalConfirmado = comValorReal.reduce((s, { pag }) => s + Number(pag.valor_real), 0);
+    const provisaoDosConfirmados = comValorReal.reduce((s, { r }) => s + Number(r.valor || 0), 0);
+    const diferenca = totalConfirmado - provisaoDosConfirmados;
     const atrasadasCount = linhas.filter(l => l.status.statusClass === 'atrasada').length;
 
     document.getElementById('cardsContasMes').innerHTML = `
@@ -1046,12 +1064,40 @@
   document.getElementById('cmFiltroStatus').addEventListener('change', renderChecklistFixas);
 
   document.getElementById('cmChecklistTbody').addEventListener('click', async (e) => {
-    if (!e.target.classList.contains('btn-toggle-pago')) return;
     const tr = e.target.closest('tr');
+    if (!tr) return;
     const fixaId = parseInt(tr.dataset.fixaId);
     const mesStr = document.getElementById('cmMes').value || currentMonthStr();
-    const jaPago = e.target.dataset.pago === 'true';
     const fixa = despesasFixas.find(f => f.id === fixaId);
+
+    if (e.target.classList.contains('btn-confirmar-valor')) {
+      const valorRealInput = tr.querySelector('.pay-valor-input').value;
+      const valorReal = valorRealInput !== '' ? parseFloat(valorRealInput) : fixa.valor;
+      if (isNaN(valorReal)) { alert('Informe um valor válido.'); return; }
+      const btn = e.target; btn.disabled = true; const original = btn.textContent; btn.textContent = 'Salvando...';
+      const { data, error } = await withTimeout(sb.from('pf_fixas_pagamentos').insert([{
+        despesa_fixa_id: fixaId, mes_referencia: `${mesStr}-01`, valor_real: valorReal
+      }]).select());
+      btn.disabled = false; btn.textContent = original;
+      if (error) { alert(error.message); return; }
+      fixasPagamentos.push(data[0]);
+      renderAll();
+      return;
+    }
+
+    if (e.target.classList.contains('btn-remove-confirmacao')) {
+      if (!confirm('Remover a confirmação de valor? Volta para pendente.')) return;
+      const pag = pagamentoDoMes(fixaId, mesStr);
+      if (!pag) return;
+      const { error } = await withTimeout(sb.from('pf_fixas_pagamentos').delete().eq('id', pag.id));
+      if (error) { alert(error.message); return; }
+      fixasPagamentos = fixasPagamentos.filter(p => p.id !== pag.id);
+      renderAll();
+      return;
+    }
+
+    if (!e.target.classList.contains('btn-toggle-pago')) return;
+    const jaPago = e.target.dataset.pago === 'true';
 
     const btnToggle = e.target;
     btnToggle.disabled = true; const originalLabel = btnToggle.textContent; btnToggle.textContent = 'Salvando...';
@@ -1059,8 +1105,9 @@
     if (!jaPago) {
       const isoData = tr.querySelector('.pay-date-input').value;
       if (!isoData) { alert('Selecione a data do pagamento.'); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
-      const valorRealInput = tr.querySelector('.pay-valor-input').value;
-      const valorReal = valorRealInput !== '' ? parseFloat(valorRealInput) : fixa.valor;
+      const existingPag = pagamentoDoMes(fixaId, mesStr);
+      const valorRealInput = tr.querySelector('.pay-valor-input');
+      const valorReal = existingPag ? Number(existingPag.valor_real) : (valorRealInput && valorRealInput.value !== '' ? parseFloat(valorRealInput.value) : fixa.valor);
       if (isNaN(valorReal)) { alert('Informe um valor real válido.'); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       const { data: diariaInserted, error: errDiaria } = await withTimeout(sb.from('pf_despesas_diarias').insert([{
         data: isoData,
@@ -1074,27 +1121,35 @@
       if (errDiaria) { alert(errDiaria.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       despesasDiarias.push(diariaInserted[0]);
 
-      const { data: pagInserted, error: errPag } = await withTimeout(sb.from('pf_fixas_pagamentos').insert([{
-        despesa_fixa_id: fixaId,
-        mes_referencia: `${mesStr}-01`,
-        data_pagamento: isoData,
-        valor_real: valorReal,
-        despesa_diaria_id: diariaInserted[0].id
-      }]).select());
-      if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
-      fixasPagamentos.push(pagInserted[0]);
+      if (existingPag) {
+        const { data: pagUpdated, error: errPag } = await withTimeout(sb.from('pf_fixas_pagamentos').update({
+          data_pagamento: isoData, valor_real: valorReal, despesa_diaria_id: diariaInserted[0].id
+        }).eq('id', existingPag.id).select());
+        if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+        fixasPagamentos = fixasPagamentos.filter(p => p.id !== existingPag.id); fixasPagamentos.push(pagUpdated[0]);
+      } else {
+        const { data: pagInserted, error: errPag } = await withTimeout(sb.from('pf_fixas_pagamentos').insert([{
+          despesa_fixa_id: fixaId,
+          mes_referencia: `${mesStr}-01`,
+          data_pagamento: isoData,
+          valor_real: valorReal,
+          despesa_diaria_id: diariaInserted[0].id
+        }]).select());
+        if (errPag) { alert(errPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+        fixasPagamentos.push(pagInserted[0]);
+      }
     } else {
       const pag = pagamentoDoMes(fixaId, mesStr);
       if (!pag) { btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
-      if (!confirm('Desmarcar pagamento? O lançamento correspondente em Despesas Diárias será removido.')) { btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+      if (!confirm('Desmarcar pagamento? Volta para "Confirmada" (o lançamento em Despesas Diárias será removido).')) { btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
       if (pag.despesa_diaria_id) {
         const { error: errDelDiaria } = await withTimeout(sb.from('pf_despesas_diarias').delete().eq('id', pag.despesa_diaria_id));
         if (errDelDiaria) { alert(errDelDiaria.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
         despesasDiarias = despesasDiarias.filter(d => d.id !== pag.despesa_diaria_id);
       }
-      const { error: errDelPag } = await withTimeout(sb.from('pf_fixas_pagamentos').delete().eq('id', pag.id));
-      if (errDelPag) { alert(errDelPag.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
-      fixasPagamentos = fixasPagamentos.filter(p => p.id !== pag.id);
+      const { data: pagUpdated, error: errUpdate } = await withTimeout(sb.from('pf_fixas_pagamentos').update({ data_pagamento: null, despesa_diaria_id: null }).eq('id', pag.id).select());
+      if (errUpdate) { alert(errUpdate.message); btnToggle.disabled = false; btnToggle.textContent = originalLabel; return; }
+      fixasPagamentos = fixasPagamentos.filter(p => p.id !== pag.id); fixasPagamentos.push(pagUpdated[0]);
     }
     renderAll();
   });
@@ -1107,9 +1162,12 @@
     const totalMes = doMes.reduce((s, r) => s + Number(r.valor || 0), 0);
 
     const ativasNoMes = despesasFixas.filter(r => prazoInfo(r, mesStr).ativa && (!filtroCategoria || r.categoria === filtroCategoria));
-    const fixasPendentes = ativasNoMes.filter(r => !pagamentoDoMes(r.id, mesStr));
-    const valorPendente = fixasPendentes.reduce((s, r) => s + Number(r.valor || 0), 0);
-    const atrasadas = fixasPendentes.filter(r => statusFixaNoMes(r, mesStr, false).statusClass === 'atrasada');
+    const fixasPendentes = ativasNoMes.filter(r => { const pag = pagamentoDoMes(r.id, mesStr); return !(pag && pag.data_pagamento); });
+    const valorPendente = fixasPendentes.reduce((s, r) => {
+      const pag = pagamentoDoMes(r.id, mesStr);
+      return s + Number((pag && pag.valor_real != null) ? pag.valor_real : r.valor);
+    }, 0);
+    const atrasadas = fixasPendentes.filter(r => statusFixaNoMes(r, mesStr, pagamentoDoMes(r.id, mesStr)).statusClass === 'atrasada');
 
     const compras = creditoCompras().filter(r => !filtroCategoria || r.categoria === filtroCategoria);
     const faturaAtual = compras.reduce((s, r) => s + (r.parcelaAtual <= r.parcelas ? r.valorParcela : 0), 0);
