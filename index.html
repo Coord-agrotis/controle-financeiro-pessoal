@@ -271,6 +271,7 @@
     </div>
     <div class="field"><label>Valor (R$)</label><input type="number" step="0.01" id="ddValor"></div>
     <div class="field" id="ddParcelasField" style="display:none"><label>Parcelas</label><input type="number" min="1" max="48" value="1" id="ddParcelas"></div>
+    <div class="field" id="ddCartaoField" style="display:none"><label>Cartão</label><select id="ddCartao"></select></div>
     <div class="field grow"><label>Observações</label><input type="text" id="ddObs"></div>
     <button class="btn btn-primary" id="btnAddDiaria">+ Adicionar</button>
   </div>
@@ -302,13 +303,36 @@
   <div class="subtitle" style="margin-bottom:14px">Gerado automaticamente a partir dos lançamentos de "Despesas Diárias" pagos no Crédito.</div>
   <div class="cards" id="cardsCartao"></div>
 
+  <div class="section-title">Cartões cadastrados</div>
+  <div class="chips" id="cartaoChips"></div>
+  <div class="cat-manager">
+    <input type="text" id="cartaoNovoNome" placeholder="Nome do cartão (ex: Nubank)">
+    <input type="number" min="1" max="31" id="cartaoNovoFechamento" placeholder="Dia fechamento" style="width:130px">
+    <button class="btn" id="btnAddCartao">+ Cartão</button>
+  </div>
+  <div class="hint">A partir do dia de fechamento, compras no cartão caem na fatura do mês seguinte.</div>
+
+  <div class="section-title">Registrar saldo inicial</div>
+  <div class="hint">Use para lançar compras parceladas que já existiam antes de começar a usar o app.</div>
+  <div class="form-row">
+    <div class="field"><label>Cartão</label><select id="siCartao"></select></div>
+    <div class="field grow"><label>Descrição</label><input type="text" id="siDescricao" placeholder="Ex: Notebook"></div>
+    <div class="field"><label>Categoria</label><select id="siCategoria"></select></div>
+    <div class="field"><label>Valor da Parcela</label><input type="number" step="0.01" id="siValorParcela"></div>
+    <div class="field"><label>Parcelas Restantes</label><input type="number" min="1" id="siParcelasRestantes"></div>
+    <div class="field"><label>Mês de Referência</label><input type="month" id="siMesReferencia"></div>
+    <button class="btn btn-primary" id="btnAddSaldoInicial">+ Adicionar</button>
+  </div>
+  <div class="hint" id="siStatus"></div>
+
   <div class="form-row">
     <div class="field"><label>Categoria</label><select id="ccFiltroCategoria"><option value="">Todas</option></select></div>
+    <div class="field"><label>Cartão</label><select id="ccFiltroCartao"><option value="">Todos</option></select></div>
   </div>
 
   <div class="section-title">Compras parceladas</div>
   <table>
-    <thead><tr><th>Data da Compra</th><th>Descrição</th><th>Categoria</th><th class="num">Valor Total</th><th class="num">Parcelas</th><th class="num">Valor da Parcela</th><th>Parcela Atual</th></tr></thead>
+    <thead><tr><th>Data da Compra</th><th>Descrição</th><th>Categoria</th><th>Cartão</th><th class="num">Valor Total</th><th class="num">Parcelas</th><th class="num">Valor da Parcela</th><th>Parcela Atual</th></tr></thead>
     <tbody id="ccTbody"></tbody>
   </table>
 
@@ -372,6 +396,7 @@
   let categorias = [];
   let fixasPagamentos = [];
   let despesasCatalogo = [];
+  let cartoes = [];
   let realtimeReady = false;
   let editingFixaId = null;
 
@@ -446,14 +471,15 @@
 
   // ---------------- DATA LOADING ----------------
   async function loadData() {
-    const [fxRes, ddRes, catRes, pagRes, catalogoRes] = await Promise.all([
+    const [fxRes, ddRes, catRes, pagRes, catalogoRes, cartoesRes] = await Promise.all([
       withTimeout(sb.from('pf_despesas_fixas').select('*').order('dia_vencimento', { ascending: true })),
       withTimeout(sb.from('pf_despesas_diarias').select('*').order('data', { ascending: false })),
       withTimeout(sb.from('pf_categorias').select('*').order('nome', { ascending: true })),
       withTimeout(sb.from('pf_fixas_pagamentos').select('*')),
-      withTimeout(sb.from('pf_despesas_catalogo').select('*').order('nome', { ascending: true }))
+      withTimeout(sb.from('pf_despesas_catalogo').select('*').order('nome', { ascending: true })),
+      withTimeout(sb.from('pf_cartoes').select('*').order('nome', { ascending: true }))
     ]);
-    const loadErrors = [fxRes, ddRes, catRes, pagRes, catalogoRes].map(r => r.error).filter(Boolean);
+    const loadErrors = [fxRes, ddRes, catRes, pagRes, catalogoRes, cartoesRes].map(r => r.error).filter(Boolean);
     const banner = document.getElementById('loadErrorBanner');
     if (loadErrors.length) {
       banner.textContent = '⚠ Não foi possível carregar todos os dados (' + loadErrors[0].message + '). Recarregue a página (F5) e tente novamente.';
@@ -467,6 +493,7 @@
     categorias = catRes.data || [];
     fixasPagamentos = pagRes.data || [];
     despesasCatalogo = catalogoRes.data || [];
+    cartoes = cartoesRes.data || [];
     renderAll();
     updateLastUpdate();
   }
@@ -521,6 +548,16 @@
         }
         renderAll(); updateLastUpdate();
       }).subscribe();
+
+    sb.channel('pf-cartoes-changes')
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'pf_cartoes' }, (payload) => {
+        if (payload.eventType === 'DELETE') cartoes = cartoes.filter(r => r.id !== payload.old.id);
+        else {
+          cartoes = cartoes.filter(r => r.id !== payload.new.id);
+          cartoes.push(payload.new);
+        }
+        renderAll(); updateLastUpdate();
+      }).subscribe();
   }
 
   function updateLastUpdate() {
@@ -530,6 +567,7 @@
   function renderAll() {
     renderCategoriaOptions();
     renderCatalogoDespesas();
+    renderCartoesUI();
     renderFixas();
     renderDiarias();
     renderCartao();
@@ -554,7 +592,7 @@
     const ordered = [...categorias].sort((a, b) => a.nome.localeCompare(b.nome));
     const optionsHtml = ordered.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
 
-    ['catDespCategoria'].forEach(id => {
+    ['catDespCategoria', 'siCategoria'].forEach(id => {
       const sel = document.getElementById(id);
       const prev = sel.value;
       sel.innerHTML = '<option value="">Selecione...</option>' + optionsHtml;
@@ -788,7 +826,9 @@
 
   // ---------------- DESPESAS DIARIAS ----------------
   document.getElementById('ddForma').addEventListener('change', (e) => {
-    document.getElementById('ddParcelasField').style.display = e.target.value === 'Credito' ? 'flex' : 'none';
+    const isCredito = e.target.value === 'Credito';
+    document.getElementById('ddParcelasField').style.display = isCredito ? 'flex' : 'none';
+    document.getElementById('ddCartaoField').style.display = isCredito ? 'flex' : 'none';
   });
 
   function renderDiarias() {
@@ -845,6 +885,7 @@
       forma_pagamento: forma,
       valor,
       parcelas: forma === 'Credito' ? (parseInt(document.getElementById('ddParcelas').value) || 1) : null,
+      cartao_id: forma === 'Credito' ? (parseInt(document.getElementById('ddCartao').value) || null) : null,
       observacoes: document.getElementById('ddObs').value.trim() || null
     };
     const btnDd = document.getElementById('btnAddDiaria');
@@ -856,6 +897,7 @@
     ['ddDescricao','ddValor','ddObs'].forEach(id => document.getElementById(id).value = '');
     document.getElementById('ddDespesaCatalogo').value = '';
     document.getElementById('ddCategoriaPreview').textContent = '';
+    document.getElementById('ddCartao').value = '';
     document.getElementById('ddParcelas').value = 1;
     statusEl.textContent = ''; renderAll();
   });
@@ -880,6 +922,87 @@
     renderDiarias();
   });
 
+  // ---------------- CARTOES (cadastro) ----------------
+  function renderCartoesUI() {
+    const ordered = [...cartoes].sort((a, b) => a.nome.localeCompare(b.nome));
+
+    const chips = document.getElementById('cartaoChips');
+    chips.innerHTML = ordered.length
+      ? ordered.map(c => `<span class="chip" data-id="${c.id}">${c.nome} (fecha dia ${c.dia_fechamento})<button class="btn-del-cartao" title="Excluir cartão">✕</button></span>`).join('')
+      : '<span class="hint">Nenhum cartão cadastrado ainda.</span>';
+
+    const ddSel = document.getElementById('ddCartao');
+    const ddPrev = ddSel.value;
+    ddSel.innerHTML = '<option value="">Sem cartão específico</option>' + ordered.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    if (ordered.some(c => String(c.id) === ddPrev)) ddSel.value = ddPrev;
+
+    const siSel = document.getElementById('siCartao');
+    const siPrev = siSel.value;
+    siSel.innerHTML = '<option value="">Selecione...</option>' + ordered.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    if (ordered.some(c => String(c.id) === siPrev)) siSel.value = siPrev;
+
+    const ccSel = document.getElementById('ccFiltroCartao');
+    const ccPrev = ccSel.value;
+    ccSel.innerHTML = '<option value="">Todos</option>' + ordered.map(c => `<option value="${c.id}">${c.nome}</option>`).join('');
+    if (ordered.some(c => String(c.id) === ccPrev)) ccSel.value = ccPrev;
+  }
+
+  document.getElementById('btnAddCartao').addEventListener('click', async () => {
+    const nome = document.getElementById('cartaoNovoNome').value.trim();
+    const fechamento = parseInt(document.getElementById('cartaoNovoFechamento').value);
+    if (!nome || isNaN(fechamento)) { alert('Informe nome e dia de fechamento do cartão.'); return; }
+    const btn = document.getElementById('btnAddCartao');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    const { data, error } = await withTimeout(sb.from('pf_cartoes').insert([{ nome, dia_fechamento: fechamento }]).select());
+    btn.disabled = false; btn.textContent = '+ Cartão';
+    if (error) { alert(error.message); return; }
+    cartoes = cartoes.filter(c => c.id !== data[0].id); cartoes.push(data[0]);
+    document.getElementById('cartaoNovoNome').value = '';
+    document.getElementById('cartaoNovoFechamento').value = '';
+    renderAll();
+  });
+
+  document.getElementById('cartaoChips').addEventListener('click', async (e) => {
+    if (!e.target.classList.contains('btn-del-cartao')) return;
+    const id = e.target.closest('.chip').dataset.id;
+    if (!confirm('Excluir este cartão?')) return;
+    const { error } = await withTimeout(sb.from('pf_cartoes').delete().eq('id', id));
+    if (error) { alert(error.message); return; }
+    cartoes = cartoes.filter(c => String(c.id) !== id); renderAll();
+  });
+
+  document.getElementById('btnAddSaldoInicial').addEventListener('click', async () => {
+    const cartaoId = document.getElementById('siCartao').value;
+    const descricao = document.getElementById('siDescricao').value.trim();
+    const categoria = document.getElementById('siCategoria').value || null;
+    const valorParcela = parseFloat(document.getElementById('siValorParcela').value);
+    const parcelasRestantes = parseInt(document.getElementById('siParcelasRestantes').value);
+    const mesRef = document.getElementById('siMesReferencia').value || currentMonthStr();
+    const statusEl = document.getElementById('siStatus');
+    if (!cartaoId || !descricao || isNaN(valorParcela) || !parcelasRestantes) {
+      statusEl.textContent = 'Preencha Cartão, Descrição, Valor da Parcela e Parcelas Restantes.'; statusEl.className = 'hint error'; return;
+    }
+    const row = {
+      data: `${mesRef}-01`,
+      descricao: descricao + ' (saldo inicial)',
+      categoria,
+      forma_pagamento: 'Credito',
+      valor: valorParcela * parcelasRestantes,
+      parcelas: parcelasRestantes,
+      cartao_id: parseInt(cartaoId),
+      observacoes: 'Saldo inicial do cartão'
+    };
+    const btn = document.getElementById('btnAddSaldoInicial');
+    btn.disabled = true; btn.textContent = 'Salvando...';
+    const { data, error } = await withTimeout(sb.from('pf_despesas_diarias').insert([row]).select());
+    btn.disabled = false; btn.textContent = '+ Adicionar';
+    if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
+    despesasDiarias = despesasDiarias.filter(r => r.id !== data[0].id); despesasDiarias.push(data[0]);
+    ['siDescricao','siValorParcela','siParcelasRestantes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('siCartao').value = '';
+    statusEl.textContent = ''; renderAll();
+  });
+
   // ---------------- CARTAO DE CREDITO (derivado) ----------------
   function creditoCompras() {
     return despesasDiarias
@@ -888,28 +1011,36 @@
         const parcelas = Math.max(1, parseInt(r.parcelas) || 1);
         const valorParcela = Number(r.valor || 0) / parcelas;
         const [y, m, d] = r.data.split('-').map(Number);
-        const compraMonth = new Date(y, m - 1, 1);
+        let compraMonth = new Date(y, m - 1, 1);
+        const cartao = r.cartao_id ? cartoes.find(c => c.id === r.cartao_id) : null;
+        if (cartao && cartao.dia_fechamento && d > cartao.dia_fechamento) {
+          compraMonth = new Date(compraMonth.getFullYear(), compraMonth.getMonth() + 1, 1);
+        }
         const now = new Date();
         const nowMonth = new Date(now.getFullYear(), now.getMonth(), 1);
         let mesesPassados = (nowMonth.getFullYear() - compraMonth.getFullYear()) * 12 + (nowMonth.getMonth() - compraMonth.getMonth());
         const parcelaAtual = Math.min(parcelas, Math.max(1, mesesPassados + 1));
-        return { ...r, parcelas, valorParcela, compraMonth, parcelaAtual };
+        return { ...r, parcelas, valorParcela, compraMonth, parcelaAtual, cartaoNome: cartao ? cartao.nome : null };
       })
       .sort((a, b) => (b.data || '').localeCompare(a.data || ''));
   }
 
   function renderCartao() {
     const filtroCategoria = document.getElementById('ccFiltroCategoria').value;
-    const compras = creditoCompras().filter(r => !filtroCategoria || r.categoria === filtroCategoria);
+    const filtroCartao = document.getElementById('ccFiltroCartao').value;
+    const compras = creditoCompras()
+      .filter(r => !filtroCategoria || r.categoria === filtroCategoria)
+      .filter(r => !filtroCartao || String(r.cartao_id) === filtroCartao);
     const tbody = document.getElementById('ccTbody');
     if (!compras.length) {
-      tbody.innerHTML = '<tr><td colspan="7" class="empty-msg">Nenhuma compra no crédito lançada.</td></tr>';
+      tbody.innerHTML = '<tr><td colspan="8" class="empty-msg">Nenhuma compra no crédito lançada.</td></tr>';
     } else {
       tbody.innerHTML = compras.map(r => `
         <tr>
           <td>${fmtDate(r.data)}</td>
           <td class="desc-col">${r.descricao || ''}</td>
           <td>${r.categoria || ''}</td>
+          <td>${r.cartaoNome || '-'}</td>
           <td class="num">${fmtBRL(r.valor)}</td>
           <td class="num">${r.parcelas}x</td>
           <td class="num">${fmtBRL(r.valorParcela)}</td>
@@ -953,6 +1084,7 @@
   }
 
   document.getElementById('ccFiltroCategoria').addEventListener('change', renderCartao);
+  document.getElementById('ccFiltroCartao').addEventListener('change', renderCartao);
 
   // ---------------- PREVISAO (derivado) ----------------
   function renderPrevisao() {
