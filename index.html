@@ -1073,6 +1073,8 @@
     const comValorReal = linhas.filter(l => l.pag && l.pag.valor_real != null);
     const totalProvisionado = linhas.reduce((s, { r }) => s + Number(r.valor || 0), 0);
     const totalConfirmado = comValorReal.reduce((s, { pag }) => s + Number(pag.valor_real), 0);
+    const totalConfirmadoDebito = comValorReal.filter(l => l.pag.forma_pagamento !== 'Credito').reduce((s, { pag }) => s + Number(pag.valor_real), 0);
+    const totalConfirmadoCredito = comValorReal.filter(l => l.pag.forma_pagamento === 'Credito').reduce((s, { pag }) => s + Number(pag.valor_real), 0);
     const provisaoDosConfirmados = comValorReal.reduce((s, { r }) => s + Number(r.valor || 0), 0);
     const diferenca = totalConfirmado - provisaoDosConfirmados;
     const atrasadasCount = linhas.filter(l => l.status.statusClass === 'atrasada').length;
@@ -1080,6 +1082,8 @@
     document.getElementById('cardsContasMes').innerHTML = `
       <div class="card total"><div class="label">Provisionado</div><div class="value">${fmtBRL(totalProvisionado)}</div></div>
       <div class="card success"><div class="label">Confirmado (real)</div><div class="value">${fmtBRL(totalConfirmado)}</div></div>
+      <div class="card"><div class="label">Confirmado Débito</div><div class="value">${fmtBRL(totalConfirmadoDebito)}</div></div>
+      <div class="card credito"><div class="label">Confirmado Crédito</div><div class="value">${fmtBRL(totalConfirmadoCredito)}</div></div>
       <div class="card atrasada"><div class="label">Atrasadas</div><div class="value">${atrasadasCount}</div></div>
       <div class="card"><div class="label">Diferença (real - provisão)</div><div class="value">${diferenca >= 0 ? '+' : ''}${fmtBRL(diferenca)}</div></div>`;
   }
