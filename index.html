@@ -260,8 +260,12 @@
 
   <div class="form-row">
     <div class="field"><label>Data</label><input type="date" id="ddData"></div>
-    <div class="field grow"><label>Descrição</label><input type="text" id="ddDescricao"></div>
-    <div class="field"><label>Categoria / Onde está indo</label><select id="ddCategoria"></select></div>
+    <div class="field grow">
+      <label>Despesa</label>
+      <select id="ddDespesaCatalogo"></select>
+      <span class="hint" id="ddCategoriaPreview" style="margin:2px 0 0"></span>
+    </div>
+    <div class="field grow"><label>Descrição</label><input type="text" id="ddDescricao" placeholder="Opcional - detalhe extra"></div>
     <div class="field"><label>Forma de Pagamento</label>
       <select id="ddForma"><option value="Debito">Débito</option><option value="Credito">Crédito</option></select>
     </div>
@@ -550,7 +554,7 @@
     const ordered = [...categorias].sort((a, b) => a.nome.localeCompare(b.nome));
     const optionsHtml = ordered.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
 
-    ['catDespCategoria', 'ddCategoria'].forEach(id => {
+    ['catDespCategoria'].forEach(id => {
       const sel = document.getElementById(id);
       const prev = sel.value;
       sel.innerHTML = '<option value="">Selecione...</option>' + optionsHtml;
@@ -595,11 +599,14 @@
   // ---------------- CADASTRO DE DESPESAS (nome + categoria) ----------------
   function renderCatalogoDespesas() {
     const ordered = [...despesasCatalogo].sort((a, b) => a.nome.localeCompare(b.nome));
+    const optionsHtml = ordered.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
 
-    const sel = document.getElementById('fxTipoCatalogo');
-    const prev = sel.value;
-    sel.innerHTML = '<option value="">Selecione...</option>' + ordered.map(c => `<option value="${c.nome}">${c.nome}</option>`).join('');
-    if (ordered.some(c => c.nome === prev)) sel.value = prev;
+    ['fxTipoCatalogo', 'ddDespesaCatalogo'].forEach(id => {
+      const sel = document.getElementById(id);
+      const prev = sel.value;
+      sel.innerHTML = '<option value="">Selecione...</option>' + optionsHtml;
+      if (ordered.some(c => c.nome === prev)) sel.value = prev;
+    });
 
     const tbody = document.getElementById('catDespTbody');
     tbody.innerHTML = ordered.length
@@ -610,6 +617,11 @@
   document.getElementById('fxTipoCatalogo').addEventListener('change', (e) => {
     const item = despesasCatalogo.find(c => c.nome === e.target.value);
     document.getElementById('fxCategoriaPreview').textContent = item ? ('Categoria: ' + (item.categoria || '—')) : '';
+  });
+
+  document.getElementById('ddDespesaCatalogo').addEventListener('change', (e) => {
+    const item = despesasCatalogo.find(c => c.nome === e.target.value);
+    document.getElementById('ddCategoriaPreview').textContent = item ? ('Categoria: ' + (item.categoria || '—')) : '';
   });
 
   document.getElementById('btnAddDespCatalogo').addEventListener('click', async () => {
@@ -819,15 +831,17 @@
 
   document.getElementById('btnAddDiaria').addEventListener('click', async () => {
     const data = document.getElementById('ddData').value;
-    const descricao = document.getElementById('ddDescricao').value.trim();
+    const tipo = document.getElementById('ddDespesaCatalogo').value;
+    const descricaoExtra = document.getElementById('ddDescricao').value.trim();
     const valor = parseFloat(document.getElementById('ddValor').value);
     const forma = document.getElementById('ddForma').value;
     const statusEl = document.getElementById('ddStatus');
-    if (!data || !descricao || isNaN(valor)) { statusEl.textContent = 'Informe Data, Descrição e Valor.'; statusEl.className = 'hint error'; return; }
+    if (!data || !tipo || isNaN(valor)) { statusEl.textContent = 'Informe Data, Despesa e Valor.'; statusEl.className = 'hint error'; return; }
+    const catalogItem = despesasCatalogo.find(c => c.nome === tipo);
     const row = {
       data,
-      descricao,
-      categoria: document.getElementById('ddCategoria').value.trim() || null,
+      descricao: tipo + (descricaoExtra ? ' - ' + descricaoExtra : ''),
+      categoria: catalogItem ? catalogItem.categoria : null,
       forma_pagamento: forma,
       valor,
       parcelas: forma === 'Credito' ? (parseInt(document.getElementById('ddParcelas').value) || 1) : null,
@@ -839,7 +853,9 @@
     btnDd.disabled = false; btnDd.textContent = '+ Adicionar';
     if (error) { statusEl.textContent = error.message; statusEl.className = 'hint error'; return; }
     despesasDiarias = despesasDiarias.filter(r => r.id !== inserted[0].id); despesasDiarias.push(inserted[0]);
-    ['ddDescricao','ddCategoria','ddValor','ddObs'].forEach(id => document.getElementById(id).value = '');
+    ['ddDescricao','ddValor','ddObs'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('ddDespesaCatalogo').value = '';
+    document.getElementById('ddCategoriaPreview').textContent = '';
     document.getElementById('ddParcelas').value = 1;
     statusEl.textContent = ''; renderAll();
   });
