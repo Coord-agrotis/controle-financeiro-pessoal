@@ -867,7 +867,7 @@
           <td>${r.categoria || ''}</td>
           <td><span class="badge ${r.forma_pagamento === 'Credito' ? 'credito' : 'debito'}">${r.forma_pagamento === 'Credito' ? 'Crédito' : 'Débito'}</span></td>
           <td class="num">${fmtBRL(r.valor)}</td>
-          <td>${r.forma_pagamento === 'Credito' ? (r.parcelas || 1) + 'x' : '-'}</td>
+          <td>${r.forma_pagamento === 'Credito' ? (r.parcelas || 1) + 'x' + ((r.parcelas || 1) > 1 ? ' de ' + fmtBRL(Number(r.valor || 0) / r.parcelas) : '') : '-'}</td>
           <td class="desc-col">${r.observacoes || ''}</td>
           <td><button class="btn-icon btn-del-diaria" title="Excluir">🗑️</button></td>
         </tr>`).join('');
